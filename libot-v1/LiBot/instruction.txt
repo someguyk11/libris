@@ -1,0 +1,2 @@
+Make a API using fast API to fetch book title author and other detail and return it as a json file also
+the way of fetchingis through ISBN code we r using open library.

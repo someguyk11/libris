@@ -1,0 +1,10 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment internals.
+# PIenv also contains project source files, so ignore only the env-generated parts.
+/libot-v1/LiBot/Back-End/PIenv/Lib/
+/libot-v1/LiBot/Back-End/PIenv/Scripts/
+/libot-v1/LiBot/Back-End/PIenv/Include/
+/libot-v1/LiBot/Back-End/PIenv/pyvenv.cfg
