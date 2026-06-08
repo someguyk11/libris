@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiBot Book Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="search-panel" aria-labelledby="app-title">
+      <div class="brand-row">
+        <div class="brand-mark">L</div>
+        <div>
+          <p class="eyebrow">Open Library ISBN lookup</p>
+          <h1 id="app-title">LiBot Book Finder</h1>
+        </div>
+      </div>
+
+      <form id="book-form" class="search-form">
+        <label for="isbn-input">ISBN code</label>
+        <div class="input-row">
+          <input
+            id="isbn-input"
+            name="isbn"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="9780140328721"
+            aria-describedby="input-help"
+          >
+          <button type="submit">
+            <span>Search</span>
+          </button>
+        </div>
+        <p id="input-help">Enter a 10 or 13 digit ISBN. Hyphens and spaces are okay.</p>
+      </form>
+
+      <div class="quick-picks" aria-label="Example ISBN searches">
+        <button type="button" data-isbn="9780140328721">Fantastic Mr. Fox</button>
+        <button type="button" data-isbn="9780439064873">Harry Potter</button>
+        <button type="button" data-isbn="9780061120084">Mockingbird</button>
+      </div>
+    </section>
+
+    <section class="result-panel" aria-live="polite">
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">ISBN</div>
+        <h2>Search for a book</h2>
+        <p>Book title, author, publisher, pages, subjects, and cover art will appear here.</p>
+      </div>
+
+      <div id="loading-state" class="loading-state hidden">
+        <div class="spinner"></div>
+        <p>Fetching book details...</p>
+      </div>
+
+      <div id="error-state" class="error-state hidden"></div>
+
+      <article id="book-card" class="book-card hidden">
+        <div class="cover-wrap">
+          <img id="cover-image" src="" alt="">
+        </div>
+        <div class="book-details">
+          <p id="book-isbn" class="book-isbn"></p>
+          <h2 id="book-title"></h2>
+          <p id="book-subtitle" class="book-subtitle"></p>
+          <dl class="meta-grid">
+            <div>
+              <dt>Author</dt>
+              <dd id="book-authors"></dd>
+            </div>
+            <div>
+              <dt>Publisher</dt>
+              <dd id="book-publishers"></dd>
+            </div>
+            <div>
+              <dt>Published</dt>
+              <dd id="book-date"></dd>
+            </div>
+            <div>
+              <dt>Pages</dt>
+              <dd id="book-pages"></dd>
+            </div>
+          </dl>
+          <div>
+            <h3>Subjects</h3>
+            <div id="book-subjects" class="subject-list"></div>
+          </div>
+          <a id="library-link" class="library-link" href="#" target="_blank" rel="noreferrer">
+            View on Open Library
+          </a>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

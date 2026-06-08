@@ -14,6 +14,7 @@ app = FastAPI(
 
 OPEN_LIBRARY_ISBN_URL = "https://openlibrary.org/isbn/{isbn}.json"
 OPEN_LIBRARY_AUTHOR_URL = "https://openlibrary.org{author_key}.json"
+LIBOT_HEADERS = {"User-Agent": "LiBot/1.0 (isbn-lookup-app)"}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -41,7 +42,11 @@ async def get_book_by_isbn(isbn: str) -> dict[str, Any]:
             detail="ISBN must be a valid 10 or 13 digit code.",
         )
 
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        timeout=10.0,
+        follow_redirects=True,
+        headers=LIBOT_HEADERS,
+    ) as client:
         try:
             book_response = await client.get(
                 OPEN_LIBRARY_ISBN_URL.format(isbn=clean_isbn)
@@ -61,7 +66,7 @@ async def get_book_by_isbn(isbn: str) -> dict[str, Any]:
         if book_response.status_code >= 400:
             raise HTTPException(
                 status_code=502,
-                detail="Open Library could not process this request.",
+                detail=f"Open Library returned {book_response.status_code}.",
             )
 
         book = book_response.json()
