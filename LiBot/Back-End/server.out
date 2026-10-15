@@ -1,0 +1,19 @@
+INFO:     127.0.0.1:57120 - "GET /ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57123 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57133 - "PUT /book/4444444444 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57146 - "GET /shelves/d0661078-d82d-462f-88fb-3a2e2cdb9c34/books HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57159 - "GET /book/shelves/d0661078-d82d-462f-88fb-3a2e2cdb9c34/books HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57172 - "POST /shelves/ HTTP/1.1" 201 Created
+INFO:     127.0.0.1:57176 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57188 - "PUT /book/4444444444 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57202 - "GET /book/shelves/d0661078-d82d-462f-88fb-3a2e2cdb9c34/books HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57214 - "GET /book/shelves/84498e31-47c0-4d7f-b13e-991142f73b86/books HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57229 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57230 - "PUT /book/9999999999 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57245 - "PUT /book/4444444444 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57257 - "POST /book/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57275 - "POST /book/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57278 - "GET /health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57291 - "GET /book/8888888888 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57304 - "GET /book/search/Test%20Book%208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57323 - "GET /health HTTP/1.1" 404 Not Found

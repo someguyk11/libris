@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css">
+    <title>LiBot OS - Comms Test Pad</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="js/main.js"></script>
+    <style>
+        :root {
+            --bg-main: #060913;
+            --bg-sidebar: #0b1329;
+            --border-color: rgba(30, 41, 59, 0.7);
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-purple: #8b5cf6;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            background: var(--bg-main);
+            color: var(--text-main);
+            font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+            margin: 0; padding: 0;
+            box-sizing: border-box;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* --- SIDEBAR NAVIGATION (Maintained) --- */
+        .sidebar {
+            width: 280px;
+            background: linear-gradient(180deg, var(--bg-sidebar) 0%, #070a14 100%);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 40px 24px;
+            box-sizing: border-box;
+            z-index: 100;
+            opacity: 0;
+        }
+
+        .sidebar-brand {
+            font-size: 1.4rem;
+            font-weight: 800; color: #fff;
+            margin-bottom: 48px; position: relative; padding-left: 12px;
+        }
+
+        .sidebar-brand::before {
+            content: '';
+            position: absolute; left: 0; top: 25%; width: 4px; height: 50%;
+            background: var(--accent-blue); border-radius: 4px;
+        }
+
+        .sidebar-menu { display: flex; flex-direction: column; gap: 12px; list-style: none; padding: 0; margin: 0; }
+        .sidebar-item a { display: flex; align-items: center; padding: 16px 20px; color: var(--text-muted); text-decoration: none; border-radius: 12px; font-size: 0.95rem; font-weight: 600; }
+        .sidebar-item.active a { color: #fff; background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.02) 100%); border-color: rgba(59, 130, 246, 0.25); }
+
+        /* --- WORKSPACE LAYOUT --- */
+        .workspace { 
+            margin-left: 280px;
+            flex: 1; 
+            padding: 40px 2em; 
+            box-sizing: border-box; 
+            max-width: calc(100% - 280px);
+            width: 100%;
+        }
+        .dashboard-container { display: flex; flex-direction: column; gap: 32px; width: 100%; max-width: 1100px; margin: 0 auto; }
+        .dash-header { border-bottom: 1px solid var(--border-color); padding-bottom: 24px; opacity: 0; }
+        .dash-header h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 6px 0; }
+
+        /* --- HARDWARE GRID --- */
+        .hardware-grid { 
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); 
+            gap: 32px; 
+        }
+        .config-card { background: var(--bg-sidebar); border: 1px solid var(--border-color); border-radius: 16px; padding: 32px; opacity: 0; box-sizing: border-box; }
+
+        /* --- NETWORK CONFIG CONTROL --- */
+        .network-strip {
+            background: #0d1527;
+            padding: 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 16px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .network-strip span {
+            white-space: nowrap;
+        }
+        .network-strip input {
+            background: var(--bg-main);
+            border: 1px solid var(--border-color);
+            color: #fff; padding: 10px; border-radius: 6px; outline: none; flex: 1;
+            font-family: monospace;
+            min-width: 0;
+        }
+
+        /* --- NEATLY ORGANISED 3x3 D-PAD REMOTE INTERFACE --- */
+        .dpad-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 12px;
+            width: 100%;
+            max-width: 260px;
+            margin: 20px auto;
+        }
+
+        .dpad-btn {
+            background: #0d1527;
+            border: 1px solid var(--border-color);
+            color: #fff; font-weight: 700; font-size: 1.2rem;
+            border-radius: 12px; cursor: pointer; aspect-ratio: 1;
+            display: flex; align-items: center;
+            justify-content: center;
+            user-select: none; transition: background 0.1s, border-color 0.1s;
+        }
+
+        .dpad-btn:hover { background: rgba(59, 130, 246, 0.1); border-color: var(--accent-blue); }
+        .dpad-btn:active { background: var(--accent-blue); color: #fff; }
+        
+        /* Specific styling for the critical stop button */
+        .dpad-btn.stop-btn {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: var(--accent-red);
+            font-size: 0.9rem;
+            font-weight: 800;
+        }
+        .dpad-btn.stop-btn:hover { background: rgba(239, 68, 68, 0.2); border-color: var(--accent-red); }
+        .dpad-btn.stop-btn:active { background: var(--accent-red); color: #fff; }
+
+        /* Secondary actions (turn-in-place rotations) styling hint */
+        .dpad-btn.turn-btn {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* --- ACTION TRIGGERS --- */
+        .action-container { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+        .btn-flat { background: var(--accent-purple); border: none; color: #fff; padding: 16px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: background 0.2s; word-wrap: break-word; }
+        .btn-flat:hover { background: #7c3aed; }
+
+        /* --- LOG WINDOW --- */
+        .terminal-stream-box {
+            background: #040712;
+            border: 1px solid var(--border-color); border-radius: 12px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 20px;
+            height: 440px; overflow-y: auto; display: flex;
+            flex-direction: column; gap: 8px; color: #38bdf8;
+            box-sizing: border-box;
+        }
+        .terminal-line span { color: var(--text-muted); }
+
+        /* --- RESPONSIVENESS MEDIA QUERIES --- */
+        @media (max-width: 992px) {
+            .workspace {
+                margin-left: 0;
+                max-width: 100%;
+                padding: 80px 1.5em 40px 1.5em;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .hardware-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            .config-card {
+                padding: 20px;
+            }
+            .network-strip {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+            .dash-header h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-nav-header">
+        <div class="mobile-brand-title">LiBot <span>OS</span></div>
+        <button class="mobile-menu-trigger" id="mobileBurgerBtn">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
+    <div class="sidebar-backdrop" id="menuBackdrop"></div>
+
+    <nav class="sidebar" id="sidebarNode">
+        <div class="sidebar-brand">LiBot <span>OS</span></div>
+        <ul class="sidebar-menu">
+            <li class="sidebar-item"><a href="dashboard.html">Dashboard</a></li>
+            <li class="sidebar-item"><a href="catalog.html">Explore Catalog</a></li>
+            <li class="sidebar-item"><a href="intake.html">Register Books</a></li>
+            <li class="sidebar-item active"><a href="shelves.html">Shelf Mapping</a></li>
+        </ul>
+    </nav>
+
+    <main class="workspace">
+        <div class="dashboard-container">
+  
+            <header class="dash-header" id="headerNode">
+                <h1>Hardware Comms Test</h1>
+                <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">Send signals directly to your Robot's control monitor environment over Wi-Fi.</p>
+            </header>
+
+            <div class="hardware-grid">
+                
+                <div class="config-card" id="cardFormNode">
+                    <h3 style="margin: 0 0 14px 0; text-align: center;">Manual Drive Teach-Pad</h3>
+                    
+                    <div class="network-strip">
+                        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Robot ID:</span>
+                        <input type="text" id="robotIdField" value="RB-01" placeholder="e.g., RB-01">
+                    </div>
+
+                    <div class="network-strip">
+                        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Shelf Name:</span>
+                        <input type="text" id="shelfNameField" value="Shelf A" placeholder="e.g., Fiction Wing - Row B">
+                    </div>
+
+                    <!-- Neat 3x3 Grid Layout mapping translation vectors and local rotation parameters -->
+                    <div class="dpad-container">
+                        <button class="dpad-btn turn-btn" id="btnTurnLeft" title="Turn Left In Place">⟲</button>
+                        <button class="dpad-btn" id="btnForward" title="Drive Forward">▲</button>
+                        <button class="dpad-btn turn-btn" id="btnTurnRight" title="Turn Right In Place">⟳</button>
+
+                        <button class="dpad-btn" id="btnLeft" title="Strafe Left">◀</button>
+                        <button class="dpad-btn stop-btn" id="btnStop" title="Emergency Stop Pipeline">STOP</button>
+                        <button class="dpad-btn" id="btnRight" title="Strafe Right">▶</button>
+
+                        <div class="dpad-empty"></div>
+                        <button class="dpad-btn" id="btnBackward" title="Drive Backward">▼</button>
+                        <div class="dpad-empty"></div>
+                    </div>
+
+                    <div class="action-container">
+                        <button class="btn-flat" id="btnSaveShelf">Save Path to Shelf A</button>
+                    </div>
+                </div>
+
+                <div class="config-card" id="cardTerminalNode">
+                    <h3 style="margin: 0 0 8px 0;">Local Browser Transmission Feed</h3>
+                    <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0 0 20px 0;">Tracks commands sent from your browser container to the target hardware.</p>
+                    
+                    <div class="terminal-stream-box" id="terminalLoggerBox">
+                        <div class="terminal-line"><span>[Browser Initialization]</span> Waiting for hardware execution commands...</div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        const API_URL = "https://libot-8okb.onrender.com";      
+          
+        document.addEventListener("DOMContentLoaded", () => {
+
+            // --- GSAP PAGE FADE ENTRANCE ---
+            const tl = gsap.timeline();
+            tl.to("#sidebarNode", { opacity: 1, duration: 0.4 })
+              .to("#headerNode", { opacity: 1, y: 0, duration: 0.3 }, "-=0.1")
+              .to("#cardFormNode", { opacity: 1, x: 0, duration: 0.3 }, "-=0.1")
+              .to("#cardTerminalNode", { opacity: 1, x: 0, duration: 0.3 }, "-=0.2");
+
+            const loggerBox = document.getElementById("terminalLoggerBox");
+            const shelfNameField = document.getElementById("shelfNameField");
+            const btnSaveShelf = document.getElementById("btnSaveShelf");
+
+            // Dynamic Button Label updating logic based on input typing
+            shelfNameField.addEventListener("input", (e) => {
+                const shelfName = e.target.value.trim() || "Target Shelf";
+                btnSaveShelf.textContent = `Save Path to ${shelfName}`;
+            });
+
+    function logAction(msg) {
+        const now = new Date();
+        const timestamp = `[${now.toTimeString().split(' ')[0]}]`;
+
+        const line = document.createElement("div");
+        line.className = "terminal-line";
+        line.innerHTML = `<span>${timestamp}</span> ${msg}`;
+
+        loggerBox.appendChild(line);
+        loggerBox.scrollTop = loggerBox.scrollHeight;
+    }
+
+    let isSending = false;
+
+    async function sendCommand(command) {
+
+        if (isSending) return;
+        isSending = true;
+
+        const robotId = document.getElementById("robotIdField").value.trim().toLowerCase();
+
+        if (!robotId) {
+            logAction("❌ Enter Robot ID first");
+            isSending = false;
+            return;
+        }
+
+        logAction(`📡 Sending ${command.toUpperCase()} to ${robotId}...`);
+
+        try {
+            const response = await fetch(`${API_URL}/robot/${robotId}/command`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ command })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                logAction(`✅ Command: ${data.data.command} | Seq: ${data.data.sequence}`);
+            } else {
+                logAction("❌ Server rejected command");
+            }
+
+        } catch (err) {
+            console.error(err);
+            logAction("❌ Backend connection failed");
+        }
+
+        isSending = false;
+    }
+
+    // Button bindings
+    document.getElementById("btnForward").onclick = () => sendCommand("forward");
+    document.getElementById("btnBackward").onclick = () => sendCommand("backward");
+    document.getElementById("btnLeft").onclick = () => sendCommand("left");
+    document.getElementById("btnRight").onclick = () => sendCommand("right");
+    document.getElementById("btnTurnLeft").onclick = () => sendCommand("left_turn");
+    document.getElementById("btnTurnRight").onclick = () => sendCommand("right_turn");
+    document.getElementById("btnStop").onclick = () => sendCommand("stop");
+
+});
+
+btnSaveShelf.addEventListener("click", () => {
+    logAction("⚠ Save Path feature coming soon.");
+});
+    </script>
+</body>
+</html>

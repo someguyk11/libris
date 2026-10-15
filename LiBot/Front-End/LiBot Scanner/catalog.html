@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiBot OS - Catalog Discovery</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/main.js"></script>
+    <style>
+        /* --- OPTIMIZED HARDWARE-ACCELERATED GLOBAL FADE ANIMATION --- */
+        @keyframes pageItemFadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        /* Apply the performant fade animation across all page elements uniformly */
+        .catalog-header,
+        .search-control-container,
+        .book-card {
+            opacity: 0;
+            animation: pageItemFadeIn 0.5s ease-out forwards;
+        }
+
+        /* Sequential staggered presentation delays to keep loading feeling premium */
+        .catalog-header { animation-delay: 0.05s; }
+        .search-control-container { animation-delay: 0.1s; }
+
+        /* --- WORKSPACE & LAYOUT CONFIG --- */
+        .workspace {
+            flex: 1;
+            padding: 60px 80px !important; 
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .catalog-container {
+            width: 100%;
+            max-width: 1200px; 
+            display: flex;
+            flex-direction: column;
+        }
+
+        .catalog-header {
+            text-align: center;
+            margin-bottom: 45px;
+        }
+
+        .catalog-header h1 {
+            font-size: 2.5rem;
+            margin: 0 0 8px 0;
+            color: #fff;
+            display: inline-block;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .catalog-header p {
+            color: var(--text-muted);
+            margin: 0;
+            font-size: 1.05rem;
+            line-height: 1.5;
+        }
+
+        /* --- SEARCH AND CONTROL BAR --- */
+        .search-control-container {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 40px;
+            width: 100%;
+        }
+
+        .search-main-row {
+            display: flex;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .search-bar {
+            flex: 1;
+            padding: 16px 20px;
+            background-color: rgba(255, 255, 255, 0.015);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .search-bar:focus {
+            border-color: var(--accent-blue);
+            background-color: rgba(255, 255, 255, 0.01);
+            padding-left: 24px;
+        }
+
+        .filter-toggle-btn {
+            width: 54px;
+            height: 54px;
+            background-color: rgba(255, 255, 255, 0.015);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .filter-toggle-btn:hover {
+            border-color: var(--accent-blue);
+            background-color: rgba(59, 130, 246, 0.05);
+            color: var(--accent-blue);
+        }
+
+        .filter-toggle-btn.open-active {
+            border-color: var(--accent-blue);
+            background-color: var(--accent-blue);
+            color: #fff;
+        }
+
+        .filter-drawer {
+            display: none;
+            width: 100%;
+            margin-top: 16px;
+        }
+
+        .filter-drawer.open {
+            display: block;
+        }
+
+        .filter-drawer-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            background-color: rgba(7, 11, 22, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .filter-label {
+            font-size: 0.72rem;
+            font-weight: bold;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .filter-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .filter-chip {
+            background-color: rgba(255, 255, 255, 0.01);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-main);
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .filter-chip.active {
+            background-color: rgba(59, 130, 246, 0.12);
+            border-color: var(--accent-blue);
+            color: #fff;
+        }
+
+        /* --- RESULTS GRID --- */
+        .workspace .results-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, 1fr) !important; 
+            gap: 32px !important; 
+        }
+
+        .book-card {
+            background-color: rgba(7, 11, 22, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            transition: border-color 0.3s, box-shadow 0.4s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .book-card:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 12px 30px rgba(59, 130, 246, 0.12);
+        }
+
+        .book-info h3 {
+            margin: 0 0 8px 0;
+            font-size: 1.25rem;
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .book-info p {
+            margin: 0 0 32px 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-pill {
+            font-size: 0.75rem;
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .status-pill.available { background-color: rgba(16, 185, 129, 0.12); color: var(--accent-green); }
+        .status-pill.waitlist { background-color: rgba(59, 130, 246, 0.12); color: var(--accent-blue); }
+        .status-pill.borrowed { background-color: rgba(139, 92, 246, 0.12); color: var(--accent-purple); }
+
+        .borrow-btn {
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            font-weight: bold;
+            font-size: 0.85rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* ==========================================================================
+           RESPONSIVE OVERRIDES
+           ========================================================================== */
+        .mobile-nav-header {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background-color: #070b16;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0 20px;
+            box-sizing: border-box;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 2000;
+        }
+
+        .mobile-brand-title {
+            color: #fff;
+            font-weight: 800;
+            font-size: 1.15rem;
+            letter-spacing: -0.01em;
+        }
+        .mobile-brand-title span { color: var(--accent-blue, #3b82f6); }
+
+        .mobile-menu-trigger {
+            background: none;
+            border: none;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+            padding: 0;
+        }
+        .mobile-menu-trigger span { display: block; width: 100%; height: 2px; background-color: #fff; }
+
+        @media (max-width: 1024px) {
+            .mobile-nav-header { display: flex; }
+            .workspace {
+                margin-left: 0 !important;
+                width: 100% !important;
+                padding: 100px 24px 40px 24px !important;
+            }
+        }
+
+        /* --- TARGET SCREEN SIZES LESS THAN 700PX FOR VERTICAL STACKING --- */
+        @media (max-width: 700px) {
+            /* High specificity selector chains to completely crush style.css constraints */
+            html body .workspace .results-grid {
+                grid-template-columns: 1fr !important; 
+                gap: 20px !important;
+            }
+
+            .book-card {
+                padding: 24px;
+            }
+
+            .book-info p {
+                margin-bottom: 24px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .workspace { padding: 90px 20px 40px 20px !important; }
+            .catalog-header h1 { font-size: 1.8rem; }
+            .search-main-row { gap: 10px; }
+            .search-bar { padding: 14px 16px; }
+            .filter-toggle-btn { width: 48px; height: 48px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-nav-header">
+        <div class="mobile-brand-title">LiBot <span>OS</span></div>
+        <button class="mobile-menu-trigger" id="mobileBurgerBtn">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
+    <div class="sidebar-backdrop" id="menuBackdrop"></div>
+
+    <nav class="sidebar" id="sidebarNode">
+        <div class="sidebar-brand">LiBot <span>OS</span></div>
+        <ul class="sidebar-menu">
+            <li class="sidebar-item"><a href="dashboard.html">Dashboard</a></li>
+            <li class="sidebar-item active"><a href="catalog.html">Explore Catalog</a></li>
+            <li class="sidebar-item"><a href="intake.html">Register Books</a></li>
+            <li class="sidebar-item"><a href="shelves.html">Shelf Mapping</a></li>
+        </ul>
+    </nav>
+
+    <main class="workspace">
+        <div class="catalog-container">
+            
+            <header class="catalog-header">
+                <h1>Explore Catalog</h1>
+                <p>Search, locate, and borrow library materials instantly</p>
+            </header>
+
+            <div class="search-control-container">
+                <div class="search-main-row">
+                    <input type="text" class="search-bar" placeholder="Enter book title, author name, or ISBN code...">
+                    <button class="filter-toggle-btn" id="filterToggleBtn" title="Toggle Filters">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="filter-drawer" id="filterDrawer">
+                    <div class="filter-drawer-inner">
+                        <div class="filter-group">
+                            <span class="filter-label">Genre</span>
+                            <div class="filter-options">
+                                <button class="filter-chip active">All Genres</button>
+                                <button class="filter-chip">Horror</button>
+                                <button class="filter-chip">Romcom</button>
+                                <button class="filter-chip">Sci-Fi</button>
+                                <button class="filter-chip">History</button>
+                            </div>
+                        </div>
+
+                        <div class="filter-group">
+                            <span class="filter-label">Availability</span>
+                            <div class="filter-options">
+                                <button class="filter-chip active">Any Status</button>
+                                <button class="filter-chip">Available Now</button>
+                                <button class="filter-chip">Waitlist</button>
+                                <button class="filter-chip">Borrowed</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section class="results-grid">
+                
+                <div class="book-card">
+                    <div class="book-info">
+                        <h3>The Great Gatsby</h3>
+                        <p>F. Scott Fitzgerald</p>
+                    </div>
+                    <div class="card-footer">
+                        <span class="status-pill available">Available Now</span>
+                        <button class="borrow-btn">Borrow</button>
+                    </div>
+                </div>
+
+                <div class="book-card">
+                    <div class="book-info">
+                        <h3>Frankenstein</h3>
+                        <p>Mary Shelley</p>
+                    </div>
+                    <div class="card-footer">
+                        <span class="status-pill waitlist">Waitlist</span>
+                        <button class="borrow-btn" style="background-color: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05)">Join</button>
+                    </div>
+                </div>
+
+                <div class="book-card">
+                    <div class="book-info">
+                        <h3>A Brief History of Time</h3>
+                        <p>Stephen Hawking</p>
+                    </div>
+                    <div class="card-footer">
+                        <span class="status-pill borrowed">Borrowed</span>
+                        <button class="borrow-btn" style="opacity: 0.4; cursor: not-allowed;" disabled>Hold</button>
+                    </div>
+                </div>
+
+            </section>
+        </div>
+    </main>
+
+<script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const searchBar = document.querySelector(".search-bar");
+            const resultsGrid = document.querySelector(".results-grid");
+            
+            // Sidebar mobile triggers
+            const filterToggleBtn = document.getElementById("filterToggleBtn");
+            const filterDrawer = document.getElementById("filterDrawer");
+
+            // 1. Initial UI Tweaks: Toggle Drawer Handler
+            if (filterToggleBtn && filterDrawer) {
+                filterToggleBtn.addEventListener("click", () => {
+                    filterDrawer.classList.toggle("open");
+                    filterToggleBtn.classList.toggle("open-active");
+                });
+            }
+
+            // Filter option click handlers
+            document.querySelectorAll(".filter-options").forEach(group => {
+                group.addEventListener("click", (e) => {
+                    if (e.target.classList.contains("filter-chip")) {
+                        group.querySelectorAll(".filter-chip").forEach(chip => chip.classList.remove("active"));
+                        e.target.classList.add("active");
+                    }
+                });
+            });
+
+            // ─── LIVE BACKEND ENGINE FETCH INTEGRATION ────────────────────────
+
+            // Function to fetch and render dynamic matching book cards
+            async function processSearch(queryText) {
+                try {
+                    let endpoint = "https://libot-8okb.onrender.com/book/search/";
+                    
+                    // If search input is completely empty, default to retrieving all books via your global routing layer
+                    if (!queryText.trim()) {
+                        endpoint = "https://libot-8okb.onrender.com/book/";
+                    } else {
+                        endpoint += encodeURIComponent(queryText.trim());
+                    }
+
+                    const response = await fetch(endpoint);
+                    if (!response.ok) throw new Error("Database server network anomaly.");
+                    
+                    const books = await response.json();
+
+                    // Wipe previous layout placeholders
+                    resultsGrid.innerHTML = "";
+
+                    if (books.length === 0) {
+                        resultsGrid.innerHTML = `
+                            <div style="grid-column: span 2; text-align: center; color: var(--text-muted); padding: 40px;">
+                                <p style="font-size: 1.1rem;">No matching library materials located in Supabase storage.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    // Loop over matching rows returned from PostgreSQL database
+                    books.forEach((book, index) => {
+                        const card = document.createElement("div");
+                        card.className = "book-card";
+                        
+                        // Performance delayed structural reveal calculations
+                        card.style.animation = "pageItemFadeIn 0.5s ease-out forwards";
+                        card.style.animationDelay = `${0.05 + (index * 0.04)}s`;
+
+                        // Evaluate runtime conditional availability structures
+                        const isAvailable = book.available !== false; 
+                        const statusClass = isAvailable ? "available" : "borrowed";
+                        const statusText = isAvailable ? `Available — ${book.shelf_location}` : "Borrowed Out";
+                        const actionText = isAvailable ? "Borrow" : "Hold";
+                        const disabledAttr = isAvailable ? "" : "disabled style='opacity: 0.4; cursor: not-allowed;'";
+
+                        card.innerHTML = `
+                            <div class="book-info">
+                                <h3>${escapeHtml(book.title)}</h3>
+                                <p>${escapeHtml(book.author)}</p>
+                                <span style="font-size: 0.75rem; color: var(--text-muted); display:block; margin-top: -16px; margin-bottom: 16px;">
+                                    ISBN: ${escapeHtml(book.isbn)}
+                                </span>
+                            </div>
+                            <div class="card-footer">
+                                <span class="status-pill ${statusClass}">${statusText}</span>
+                                <button class="borrow-btn" ${disabledAttr}>${actionText}</button>
+                            </div>
+                        `;
+                        resultsGrid.appendChild(card);
+                    });
+
+                } catch (error) {
+                    console.error("Catalog retrieval error:", error);
+                    resultsGrid.innerHTML = `
+                        <div style="grid-column: span 2; text-align: center; color: var(--accent-red); padding: 40px;">
+                            <p>Unable to connect to Libot operational backend core server.</p>
+                        </div>`;
+                }
+            }
+
+            // Simple HTML escape utility to keep page execution safe against scripting injection injections
+            function escapeHtml(str) {
+                if (!str) return '';
+                return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            }
+
+            // Debounce keyboard listeners slightly to prevent overflowing network threads
+            let searchTimeout;
+            searchBar.addEventListener("input", (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    processSearch(e.target.value);
+                }, 250);
+            });
+
+            // Initial catalog load execution mapping on entry
+            processSearch("");
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiBot OS - Book Registration</title>
+    <link rel="stylesheet" href="css/style.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="js/main.js"></script>
+
+    <style>
+        :root {
+            --bg-main: #060913;
+            --bg-sidebar: #0b1329;
+            --border-color: #1e293b;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-purple: #8b5cf6;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #64748b;
+        }
+
+        .dashboard-container {
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        .dash-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 30px;
+            opacity: 0;
+        }
+
+        .dash-header h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin: 0 0 6px 0;
+            letter-spacing: -0.02em;
+        }
+
+        .header-counter {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            padding: 12px 20px;
+            border-radius: 10px;
+            text-align: right;
+        }
+
+        .header-counter span {
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        .header-counter font {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--accent-blue);
+        }
+
+        .mode-toggle-wrapper {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            margin-bottom: 8px;
+            opacity: 0;
+        }
+
+        .mode-toggle-container {
+            display: inline-flex;
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            padding: 6px;
+            border-radius: 12px;
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+        }
+
+        .intake-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+            width: 100%;
+        }
+
+        .page-view {
+            display: none;
+            flex-direction: column;
+            gap: 32px;
+            width: 100%;
+        }
+
+        .page-view.active-view {
+            display: flex;
+        }
+
+        .ingest-card {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 32px 2em;
+            box-sizing: border-box;
+            width: 100%;
+            position: relative;
+            opacity: 0;
+        }
+
+        .ingest-card h3 {
+            margin: 0 0 8px 0;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .card-desc {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin: 0 0 24px 0;
+            line-height: 1.5;
+        }
+
+        .scanner-viewport {
+            background: #040712;
+            border: 1px dashed rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            box-sizing: border-box;
+        }
+
+        .scan-btn-hardware {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            color: var(--accent-purple);
+            padding: 10px 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .scan-btn-hardware:hover {
+            background: var(--accent-purple);
+            color: #fff;
+        }
+
+        .scanner-status-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-align: center;
+        }
+
+        .scan-action-area {
+            display: flex;
+            gap: 16px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .input-control-wrapper {
+            position: relative;
+            flex: 1;
+        }
+
+        .scan-action-area input {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 14px 16px;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .scan-action-area input:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .btn-action-trigger {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--accent-blue);
+            padding: 0 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-action-trigger:hover {
+            background: var(--accent-blue);
+            color: #fff;
+        }
+
+        .duplicate-alert {
+            display: none;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--accent-red);
+            color: #ff8080;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+            font-size: 0.88rem;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .single-details-box {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 24px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .detail-group h5 {
+            margin: 0 0 6px 0;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        .detail-group p {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .stream-feed-box {
+            margin-top: 24px;
+            max-height: 320px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .stream-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.01);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.88rem;
+        }
+
+        .stream-left {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .stream-title { font-weight: 600; color: #fff; }
+        .stream-meta { font-family: monospace; color: var(--text-muted); }
+
+        .stream-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-control-arrow {
+            background: #1e293b;
+            border: none;
+            color: #fff;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-control-arrow:hover {
+            background: var(--accent-blue);
+        }
+
+        .btn-control-delete {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .btn-control-delete:hover {
+            background: var(--accent-red);
+            color: #fff;
+        }
+
+        .btn-control-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: var(--accent-blue);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .btn-control-info:hover {
+            background: var(--accent-blue);
+            color: #fff;
+        }
+
+        .info-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(4, 7, 18, 0.8);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 32px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
+        }
+
+        .modal-header h4 { margin: 0; font-size: 1.2rem; }
+        
+        .btn-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        .condition-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 16px;
+            width: 100%;
+        }
+
+        .condition-option {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .condition-option.selected {
+            border-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .condition-option input[type="radio"] {
+            accent-color: var(--accent-blue);
+            margin: 0;
+        }
+
+        .condition-label h4 { margin: 0 0 2px 0; font-size: 0.9rem; }
+        .condition-label p { margin: 0; font-size: 0.78rem; color: var(--text-muted); }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+            width: 100%;
+        }
+
+        .form-group label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        select {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+            cursor: pointer;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .btn-secondary-link {
+            background: none;
+            border: none;
+            color: var(--accent-blue);
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: left;
+            padding: 0;
+            margin-bottom: 16px;
+            display: inline-block;
+        }
+
+        .btn-secondary-link:hover {
+            color: #60a5fa;
+        }
+
+        .inline-shelf-drawer {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .drawer-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .drawer-inputs input {
+            background: var(--bg-main);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .drawer-inputs input:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .btn-drawer-save {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: var(--accent-green);
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-drawer-save:hover {
+            background: var(--accent-green);
+            color: #fff;
+        }
+
+        .dispatch-container-block {
+            margin-top: 16px;
+        }
+
+        .btn-primary-dispatch {
+            background: var(--accent-blue);
+            border: none;
+            color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 800;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s ease;
+        }
+
+        .btn-primary-dispatch:hover {
+            background: #2563eb;
+        }
+
+        .progress-wrapper {
+            margin-top: 16px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+        }
+
+        .progress-bar-bg {
+            background: #111827;
+            border: 1px solid var(--border-color);
+            height: 12px;
+            border-radius: 6px;
+            width: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            background: var(--accent-green);
+            height: 100%;
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        .progress-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        /* Responsive Overrides */
+        @media (max-width: 768px) {
+            .dash-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+                padding-bottom: 20px;
+            }
+            .dash-header h1 { font-size: 1.8rem; }
+            .header-counter { text-align: left; width: 100%; box-sizing: border-box; }
+            .ingest-card { padding: 24px 1.5em; }
+            .scan-action-area { flex-direction: column; gap: 12px; }
+            .btn-action-trigger { padding: 14px 16px; width: 100%; text-align: center; }
+            .condition-grid { grid-template-columns: 1fr; gap: 12px; }
+            .stream-row { flex-direction: column; align-items: flex-start; gap: 14px; padding: 14px; }
+            .stream-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+        }
+
+        @media (max-width: 480px) {
+            .dashboard-container { gap: 20px; }
+            .mode-toggle-container { width: 100%; }
+            .mode-btn { flex: 1; padding: 10px 12px; font-size: 0.85rem; text-align: center; }
+            .single-details-box { grid-template-columns: 1fr; gap: 16px; padding: 16px; }
+            .drawer-inputs { grid-template-columns: 1fr; }
+            .btn-primary-dispatch { padding: 16px; font-size: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-nav-header">
+        <div class="mobile-brand-title">LiBot <span>OS</span></div>
+        <button class="mobile-menu-trigger" id="mobileBurgerBtn">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </div>
+    <div class="sidebar-backdrop" id="menuBackdrop"></div>
+
+    <nav class="sidebar" id="sidebarNode">
+         <div class="sidebar-brand">LiBot <span>OS</span></div>
+        <ul class="sidebar-menu">
+            <li class="sidebar-item"><a href="dashboard.html">Dashboard</a></li>
+            <li class="sidebar-item"><a href="catalog.html">Explore Catalog</a></li>
+            <li class="sidebar-item active"><a href="intake.html">Register Books</a></li>
+            <li class="sidebar-item"><a href="shelves.html">Shelf Mapping</a></li>
+        </ul>
+    </nav>
+
+    <main class="workspace">
+        <div class="dashboard-container">
+            <header class="dash-header" id="headerNode">
+                <div>
+                    <h1>Register Returned Books</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.95rem;">Scan books into the system and choose where they should be shelved.</p>
+                </div>
+                <div class="header-counter">
+                    <span>Session Total</span>
+                    <font id="shiftTotal">0</font>
+                </div>
+            </header>
+
+            <div class="mode-toggle-wrapper" id="toggleNode">
+                <div class="mode-toggle-container">
+                    <button class="mode-btn active" id="btnSingle">One Book Mode</button>
+                    <button class="mode-btn" id="btnBulk">Batch Books Mode</button>
+                </div>
+            </div>
+
+            <div class="intake-stack">
+                <div class="page-view active-view" id="pageSingle">
+                     <div class="ingest-card cardNode">
+                        <h3>Single Book Scan</h3>
+                        <p class="card-desc">Scan or type one book to register it directly into the library database.</p>
+                      
+                        <div class="scanner-viewport">
+                            <div id="single-reader" style="width: 100%; max-width: 400px; border-radius: 8px; overflow: hidden;"></div>
+                            <span class="scanner-status-text" id="singleScannerStatus">CAMERA ACCESS: READY</span>
+                            <button class="scan-btn-hardware" id="singleHwScanTrigger">Start Live Camera Scan</button>
+                        </div>
+
+                        <div class="scan-action-area">
+                            <div class="input-control-wrapper">
+                                <input type="text" placeholder="Type book ISBN number here..." id="singleBarcodeField">
+                            </div>
+                            <button class="btn-action-trigger" id="singleLogBtn">Find Book</button>
+                        </div>
+
+                        <div class="single-details-box" id="singleDetails" style="display: none;">
+                            <div class="detail-group">
+                                <h5>Book Title</h5>
+                                <p id="lblTitle">-</p>
+                            </div>
+                            <div class="detail-group">
+                                <h5>Author</h5>
+                                <p id="lblAuthor">-</p>
+                            </div>
+                            <div class="detail-group">
+                                <h5>Publish Date</h5>
+                                <p id="lblDate">-</p>
+                            </div>
+                            <div class="detail-group">
+                                <h5>Section</h5>
+                                <p id="lblClass">Standard Shelving</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ingest-card cardNode">
+                        <h3>Book Condition</h3>
+                        <p class="card-desc">Check the physical health of the book before putting it away.</p>
+                        <div class="condition-grid">
+                            <div class="condition-option selected" onclick="selectCondition(this)">
+                                 <input type="radio" name="condSingle" checked>
+                                <div class="condition-label">
+                                    <h4>Good</h4>
+                                    <p>Ready to borrow again.</p>
+                                </div>
+                            </div>
+                            <div class="condition-option" onclick="selectCondition(this)">
+                                <input type="radio" name="condSingle">
+                                <div class="condition-label">
+                                     <h4>Minor Damage</h4>
+                                    <p>Small tears or markings.</p>
+                                </div>
+                            </div>
+                            <div class="condition-option" onclick="selectCondition(this)">
+                                <input type="radio" name="condSingle">
+                                 <div class="condition-label">
+                                    <h4>Needs Fix</h4>
+                                    <p>Send to maintenance bench.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ingest-card cardNode">
+                        <h3>Storage Location</h3>
+                        <p class="card-desc">Select which wing shelf this book belongs on.</p>
+                        <div class="form-group">
+                            <label>Library Shelf Location</label>
+                            <select class="shelfSelectClass" id="singleShelfSelect">
+                                <option value="fiction_a">Fiction Section — Shelf A</option>
+                                <option value="bio_c">Biographies — Shelf C</option>
+                                <option value="sci_b">Science Section — Shelf B</option>
+                            </select>
+                        </div>
+
+                        <button class="btn-secondary-link" onclick="toggleShelfDrawer('single')">+ Add Custom Shelf Option</button>
+
+                        <div class="inline-shelf-drawer" id="singleShelfDrawer">
+                            <div class="drawer-inputs">
+                                <input type="text" placeholder="Wing Name (e.g. History)" id="singleNewWing">
+                                <input type="text" placeholder="Shelf Label (e.g. Row G)" id="singleNewRow">
+                            </div>
+                            <button class="btn-drawer-save" onclick="saveCustomShelf('single')">Save New Shelf</button>
+                        </div>
+                        
+                        <div class="progress-wrapper" id="singleProgressWrapper">
+                            <div class="progress-label" id="singleProgressLabel">Registering: 0%</div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="singleProgressBarFill"></div>
+                            </div>
+                        </div>
+
+                        <div class="dispatch-container-block">
+                            <button class="btn-primary-dispatch" id="singleDispatchBtn">REGISTER &amp; SEND BOOK</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="page-view" id="pageBulk">
+                    <div class="ingest-card cardNode">
+                       <h3>Batch Book Entry</h3>
+                        <p class="card-desc">Scan multiple books sequentially. All items added here will map to the target shelf below.</p>
+                        
+                        <div class="scanner-viewport">
+                            <div id="bulk-reader" style="width: 100%; max-width: 400px; border-radius: 8px; overflow: hidden;"></div>
+                            <span class="scanner-status-text" id="bulkScannerStatus">CAMERA ACCESS: READY</span>
+                            <button class="scan-btn-hardware" id="bulkHwScanTrigger">Start Live Camera Scan</button>
+                        </div>
+
+                        <div class="scan-action-area">
+                            <div class="input-control-wrapper">
+                                <input type="text" placeholder="Scan or type book ISBN here..." id="bulkBarcodeField">
+                            </div>
+                            <button class="btn-action-trigger" id="bulkAppendBtn">Add to Batch</button>
+                        </div>
+
+                        <div class="duplicate-alert" id="bulkDupAlert">
+                            <strong>⚠️ Already Added:</strong> This book is already in your current batch list.
+                        </div>
+
+                        <div class="stream-feed-box" id="bulkStreamBox"></div>
+                    </div>
+
+                    <div class="ingest-card cardNode">
+                        <h3>Shared Batch Storage Location</h3>
+                        <p class="card-desc">Assign where this whole group of books will be saved inside the library stacks.</p>
+                        <div class="form-group">
+                            <label>Target Shelf Location</label>
+                            <select class="shelfSelectClass" id="bulkShelfSelect">
+                                <option value="fiction_a">Fiction Section — Shelf A</option>
+                                <option value="bio_c">Biographies — Shelf C</option>
+                                <option value="sci_b">Science Section — Shelf B</option>
+                            </select>
+                        </div>
+
+                        <button class="btn-secondary-link" onclick="toggleShelfDrawer('bulk')">+ Add Custom Shelf Option</button>
+
+                        <div class="inline-shelf-drawer" id="bulkShelfDrawer">
+                            <div class="drawer-inputs">
+                                <input type="text" placeholder="Wing Name (e.g. History)" id="bulkNewWing">
+                                <input type="text" placeholder="Shelf Label (e.g. Row G)" id="bulkNewRow">
+                            </div>
+                            <button class="btn-drawer-save" onclick="saveCustomShelf('bulk')">Save New Shelf</button>
+                        </div>
+
+                        <div class="progress-wrapper" id="bulkProgressWrapper">
+                            <div class="progress-label" id="bulkProgressLabel">Saving books: 0 / 0 registered</div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="bulkProgressBarFill"></div>
+                            </div>
+                        </div>
+
+                        <div class="dispatch-container-block">
+                            <button class="btn-primary-dispatch" id="bulkDispatchBtn">REGISTER &amp; SEND BATCH</button>
+                        </div>
+                     </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="info-modal" id="infoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="modalBookTitle">Book Information</h4>
+                <button class="btn-modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div>
+                    <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); display:block; margin-bottom:2px;">Author Name</span>
+                    <p id="modalAuthor" style="margin:0; font-weight:600; font-size:1rem;"></p>
+                </div>
+                <div>
+                    <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); display:block; margin-bottom:2px;">Publish Date</span>
+                    <p id="modalDate" style="margin:0; font-weight:600; font-size:1rem;"></p>
+                </div>
+                <div>
+                    <span style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); display:block; margin-bottom:2px;">System Code (ISBN)</span>
+                    <p id="modalIsbn" style="margin:0; font-family:monospace; color:var(--accent-blue); font-size:0.95rem;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // BACKEND BASE URL (Connected to live Render setup)
+        const BACKEND_API_BASE = "https://libot-8okb.onrender.com";
+
+        // Local cache database for open info modals
+        let catalogLocalCache = {};
+
+        document.addEventListener("DOMContentLoaded", () => {
+            
+            // GSAP Animations
+            const tl = gsap.timeline();
+            tl.to("#sidebarNode", { opacity: 1, duration: 0.4 })
+              .to("#headerNode", { opacity: 1, y: 0, duration: 0.3 }, "-=0.2")
+              .to("#toggleNode", { opacity: 1, y: 0, duration: 0.2 }, "-=0.2")
+              .to(".cardNode", { opacity: 1, y: 0, duration: 0.4, stagger: 0.1 }, "-=0.1");
+
+            // View Switch mechanics
+            const btnSingle = document.getElementById("btnSingle");
+            const btnBulk = document.getElementById("btnBulk");
+            const pageSingle = document.getElementById("pageSingle");
+            const pageBulk = document.getElementById("pageBulk");
+            const shiftTotal = document.getElementById("shiftTotal");
+
+            btnBulk.addEventListener("click", () => {
+                btnSingle.classList.remove("active");
+                btnBulk.classList.add("active");
+                pageSingle.classList.remove("active-view");
+                pageBulk.classList.add("active-view");
+                updateGlobalSessionCount();
+            });
+
+            btnSingle.addEventListener("click", () => {
+                btnBulk.classList.remove("active");
+                btnSingle.classList.add("active");
+                pageBulk.classList.remove("active-view");
+                pageSingle.classList.add("active-view");
+                updateGlobalSessionCount();
+            });
+
+            function updateGlobalSessionCount() {
+                if (pageSingle.classList.contains("active-view")) {
+                    const hasData = document.getElementById("lblTitle").textContent !== "-";
+                    shiftTotal.textContent = hasData ? "1" : "0";
+                } else {
+                    shiftTotal.textContent = document.querySelectorAll("#bulkStreamBox .stream-row").length;
+                }
+            }
+
+            // ─── CAMERA SCANNING HANDLER FUNCTION ───
+            let activeScanner = null;
+
+            function initCameraScanner(triggerButtonId, statusLabelId, readerContainerId, inputFieldId, onSuccessCallback) {
+                const triggerBtn = document.getElementById(triggerButtonId);
+                const statusLabel = document.getElementById(statusLabelId);
+                const inputField = document.getElementById(inputFieldId);
+
+                triggerBtn.addEventListener("click", () => {
+                    // Fail gracefully if mediaDevices are totally missing or context is non-secure
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        statusLabel.textContent = "❌ CAMERA COULD NOT BE FOUND";
+                        statusLabel.style.color = "var(--accent-red)";
+                        alert("camera could not be found");
+                        return;
+                    }
+
+                    if (activeScanner) {
+                        activeScanner.stop().then(() => {
+                            activeScanner = null;
+                            triggerBtn.textContent = "Start Live Camera Scan";
+                            statusLabel.textContent = "CAMERA ACCESS: READY";
+                            statusLabel.style.color = "var(--text-muted)";
+                        });
+                        return;
+                    }
+
+                    statusLabel.textContent = "REQUESTING FRONT CAMERA...";
+                    statusLabel.style.color = "var(--accent-purple)";
+
+activeScanner = new Html5Qrcode(readerContainerId);
+                    
+// Force target facingMode to use back camera ('environment')
+activeScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 260, height: 160 } },
+    (decodedText) => {
+        inputField.value = decodedText;
+        statusLabel.textContent = "🟢 ISBN RECOGNIZED: " + decodedText;
+        statusLabel.style.color = "var(--accent-green)";
+        
+        onSuccessCallback(decodedText);
+
+        // Auto stop camera capture
+        activeScanner.stop().then(() => {
+            activeScanner = null;
+            triggerBtn.textContent = "Start Live Camera Scan";
+        });
+    },
+    () => { /* Quiet seek errors to avoid console bloat */ }
+).then(() => {
+    triggerBtn.textContent = "Stop Camera";
+    // UPDATE THIS LINE HERE:
+    statusLabel.textContent = "🎥 SCANNING NOW (SHOW ISBN TO REAR CAMERA)";
+}).catch(err => {
+    console.error(err);
+    statusLabel.textContent = "❌ CAMERA COULD NOT BE FOUND";
+    statusLabel.style.color = "var(--accent-red)";
+    alert("camera could not be found");
+    activeScanner = null;
+    triggerBtn.textContent = "Start Live Camera Scan";
+});
+                });
+            }
+
+            // ─── ONE BOOK OPERATIONS ───
+            const singleBarcodeField = document.getElementById("singleBarcodeField");
+            const singleDetails = document.getElementById("singleDetails");
+            const lblTitle = document.getElementById("lblTitle");
+            const lblAuthor = document.getElementById("lblAuthor");
+            const lblDate = document.getElementById("lblDate");
+
+            async function fetchSingleBookDetails(isbn) {
+                try {
+                    lblTitle.textContent = "Searching...";
+                    singleDetails.style.display = "grid";
+
+                    const res = await fetch(`${BACKEND_API_BASE}/book/${isbn}`);
+                    const json = await res.json();
+
+                    if (json.status === 200) {
+                        lblTitle.textContent = json.data.title;
+                        lblAuthor.textContent = json.data.author || json.data.by_statement || "Unknown Author";
+                        lblDate.textContent = json.data.publish_date || "Date Unknown";
+                        catalogLocalCache[isbn] = json.data;
+                    } else {
+                        lblTitle.textContent = "Book Not Found";
+                        lblAuthor.textContent = "-";
+                        lblDate.textContent = "-";
+                    }
+                } catch (e) {
+                    console.error(e);
+                    lblTitle.textContent = "Error communicating with Render API";
+                }
+                updateGlobalSessionCount();
+            }
+
+            document.getElementById("singleLogBtn").addEventListener("click", () => {
+                const val = singleBarcodeField.value.trim();
+                if (val) fetchSingleBookDetails(val);
+            });
+
+            // Connect Single Mode front camera trigger
+            initCameraScanner("singleHwScanTrigger", "singleScannerStatus", "single-reader", "singleBarcodeField", (isbn) => {
+                fetchSingleBookDetails(isbn);
+            });
+
+            // ─── BATCH OPERATIONS ───
+            const bulkBarcodeField = document.getElementById("bulkBarcodeField");
+            const bulkStreamBox = document.getElementById("bulkStreamBox");
+            const bulkDupAlert = document.getElementById("bulkDupAlert");
+
+            async function addRowToBatch(isbn) {
+                const existing = bulkStreamBox.querySelectorAll(".stream-row");
+                let isDup = false;
+                existing.forEach(r => { if(r.getAttribute("data-isbn") === isbn) isDup = true; });
+                if (isDup) {
+                    bulkDupAlert.style.display = "flex";
+                    return;
+                }
+                bulkDupAlert.style.display = "none";
+
+                try {
+                    const res = await fetch(`${BACKEND_API_BASE}/book/${isbn}`);
+                    const json = await res.json();
+                    const book = (json.status === 200) ? json.data : { title: "Custom/Unmapped Document", author: "Unknown" };
+                    catalogLocalCache[isbn] = book;
+
+                    const row = document.createElement("div");
+                    row.className = "stream-row";
+                    row.setAttribute("data-isbn", isbn);
+                    row.innerHTML = `
+                        <div class="stream-left">
+                            <span class="stream-title">${book.title}</span>
+                            <span class="stream-meta">ISBN: ${isbn}</span>
+                        </div>
+                        <div class="stream-actions">
+                            <button class="btn-control-arrow btn-up">▲</button>
+                            <button class="btn-control-arrow btn-down">▼</button>
+                            <button class="btn-control-info">View Info</button>
+                            <button class="btn-control-delete">Remove</button>
+                        </div>
+                    `;
+                    bulkStreamBox.appendChild(row);
+                } catch(e) {
+                    console.error(e);
+                }
+                updateGlobalSessionCount();
+            }
+
+            document.getElementById("bulkAppendBtn").addEventListener("click", () => {
+                const val = bulkBarcodeField.value.trim();
+                if (val) { addRowToBatch(val); bulkBarcodeField.value = ""; }
+            });
+
+            // Connect Batch Mode front camera trigger
+            initCameraScanner("bulkHwScanTrigger", "bulkScannerStatus", "bulk-reader", "bulkBarcodeField", (isbn) => {
+                addRowToBatch(isbn);
+            });
+
+            // Batch List item actions reordering/info
+            bulkStreamBox.addEventListener("click", (e) => {
+                const row = e.target.closest(".stream-row");
+                if (!row) return;
+
+                if (e.target.classList.contains("btn-up")) {
+                    const prev = row.previousElementSibling;
+                    if (prev) bulkStreamBox.insertBefore(row, prev);
+                } 
+                else if (e.target.classList.contains("btn-down")) {
+                    const next = row.nextElementSibling;
+                    if (next) bulkStreamBox.insertBefore(next, row);
+                } 
+                else if (e.target.classList.contains("btn-control-delete")) {
+                    row.remove();
+                    updateGlobalSessionCount();
+                } 
+                else if (e.target.classList.contains("btn-control-info")) {
+                    const isbn = row.getAttribute("data-isbn");
+                    const data = catalogLocalCache[isbn] || { title: "Unmapped Document", author: "N/A", publish_date: "N/A" };
+                    document.getElementById("modalBookTitle").textContent = data.title;
+                    document.getElementById("modalAuthor").textContent = data.author || data.by_statement || "N/A";
+                    document.getElementById("modalDate").textContent = data.publish_date || "N/A";
+                    document.getElementById("modalIsbn").textContent = isbn;
+                    document.getElementById("infoModal").style.display = "flex";
+                }
+            });
+
+            document.getElementById("closeModalBtn").addEventListener("click", () => {
+                document.getElementById("infoModal").style.display = "none";
+            });
+
+            // ─── COMMIT REGISTRATION DISPATCH TO BACKEND ───
+            const singleDispatchBtn = document.getElementById("singleDispatchBtn");
+            const singleProgressWrapper = document.getElementById("singleProgressWrapper");
+            const singleProgressBarFill = document.getElementById("singleProgressBarFill");
+            const singleProgressLabel = document.getElementById("singleProgressLabel");
+
+            singleDispatchBtn.addEventListener("click", async () => {
+                const currentIsbn = singleBarcodeField.value.trim();
+                if (lblTitle.textContent === "-" || !currentIsbn) return;
+
+                singleDispatchBtn.disabled = true;
+                singleProgressWrapper.style.display = "flex";
+                
+                try {
+                    // Send to backend database endpoint
+                    await fetch(`${BACKEND_API_BASE}/book/register`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            isbn: currentIsbn,
+                            title: lblTitle.textContent,
+                            author: lblAuthor.textContent,
+                            publish_date: lblDate.textContent,
+                            shelf_location: document.getElementById("singleShelfSelect").value
+                        })
+                    });
+
+                    let pct = 0;
+                    const interval = setInterval(() => {
+                        pct += 10;
+                        singleProgressBarFill.style.width = pct + "%";
+                        singleProgressLabel.textContent = "Registering: " + pct + "%";
+
+                        if (pct >= 100) {
+                            clearInterval(interval);
+                            singleBarcodeField.value = "";
+                            lblTitle.textContent = "-";
+                            lblAuthor.textContent = "-";
+                            lblDate.textContent = "-";
+                            singleDetails.style.display = "none";
+                            
+                            setTimeout(() => {
+                                singleProgressWrapper.style.display = "none";
+                                singleProgressBarFill.style.width = "0%";
+                                singleDispatchBtn.disabled = false;
+                                updateGlobalSessionCount();
+                            }, 600);
+                        }
+                    }, 50);
+
+                } catch (e) {
+                    alert("Failed to commit database entry to Render server.");
+                    singleDispatchBtn.disabled = false;
+                    singleProgressWrapper.style.display = "none";
+                }
+            });
+
+            const bulkDispatchBtn = document.getElementById("bulkDispatchBtn");
+            const bulkProgressWrapper = document.getElementById("bulkProgressWrapper");
+            const bulkProgressBarFill = document.getElementById("bulkProgressBarFill");
+            const bulkProgressLabel = document.getElementById("bulkProgressLabel");
+
+            bulkDispatchBtn.addEventListener("click", async () => {
+                const rows = bulkStreamBox.querySelectorAll(".stream-row");
+                if (rows.length === 0) return;
+
+                bulkDispatchBtn.disabled = true;
+                bulkProgressWrapper.style.display = "flex";
+                
+                let registeredCount = 0;
+                const shelf = document.getElementById("bulkShelfSelect").value;
+
+                for (let row of rows) {
+                    const isbn = row.getAttribute("data-isbn");
+                    const bookData = catalogLocalCache[isbn] || {};
+
+                    try {
+                        await fetch(`${BACKEND_API_BASE}/book/register`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                isbn: isbn,
+                                title: bookData.title || "Unknown Title",
+                                author: bookData.author || bookData.by_statement || "Unknown Author",
+                                publish_date: bookData.publish_date || "Unknown Date",
+                                shelf_location: shelf
+                            })
+                        });
+                    } catch(e) { console.error("Batch element fail:", e); }
+
+                    registeredCount++;
+                    const pct = (registeredCount / rows.length) * 100;
+                    bulkProgressBarFill.style.width = pct + "%";
+                    bulkProgressLabel.textContent = `Saving books: ${registeredCount} / ${rows.length} registered`;
+                }
+
+                setTimeout(() => {
+                    bulkStreamBox.innerHTML = "";
+                    bulkBarcodeField.value = "";
+                    bulkProgressWrapper.style.display = "none";
+                    bulkProgressBarFill.style.width = "0%";
+                    bulkDispatchBtn.disabled = false;
+                    updateGlobalSessionCount();
+                }, 800);
+            });
+        });
+
+        // Dropdown drawer layout handling
+        function toggleShelfDrawer(type) {
+            const drawer = document.getElementById(type + 'ShelfDrawer');
+            drawer.style.display = (drawer.style.display === "flex") ? "none" : "flex";
+        }
+
+        function saveCustomShelf(type) {
+            const wingInput = document.getElementById(type + 'NewWing');
+            const rowInput = document.getElementById(type + 'NewRow');
+            const wingValue = wingInput.value.trim();
+            const rowValue = rowInput.value.trim();
+
+            if (!wingValue || !rowValue) return;
+
+            const optionText = wingValue + " Section — " + rowValue;
+            const optionValue = wingValue.toLowerCase().replace(/\s+/g, '_') + "_" + rowValue.toLowerCase().replace(/\s+/g, '_');
+
+            const singleSelect = document.getElementById("singleShelfSelect");
+            const bulkSelect = document.getElementById("bulkShelfSelect");
+
+            const opt1 = document.createElement("option"); opt1.value = optionValue; opt1.textContent = optionText;
+            const opt2 = document.createElement("option"); opt2.value = optionValue; opt2.textContent = optionText;
+
+            singleSelect.appendChild(opt1);
+            bulkSelect.appendChild(opt2);
+
+            document.getElementById(type + "ShelfSelect").value = optionValue;
+            wingInput.value = ""; rowInput.value = "";
+            toggleShelfDrawer(type);
+        }
+
+        function selectCondition(el) {
+            const container = el.closest(".condition-grid");
+            container.querySelectorAll(".condition-option").forEach(opt => opt.classList.remove("selected"));
+            el.classList.add("selected");
+            el.querySelector("input[type='radio']").checked = true;
+        }
+    </script>
+</body>
+</html>

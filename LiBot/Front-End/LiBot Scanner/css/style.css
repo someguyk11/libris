@@ -1,0 +1,308 @@
+/* --- YOUR EXISTING ROOT & SIDEBAR STYLES --- */
+:root {
+    --bg-main: #060913;
+    --bg-sidebar: #0b1329;
+    --accent-blue: #3b82f6;
+    --text-main: #f8fafc;
+    --text-muted: #64748b;
+    --border-color: rgba(51, 65, 85, 0.4);
+    --radius-sharp: 0.4em;
+    --accent-green: #10b981;
+    --accent-purple: #8b5cf6;
+}
+
+body {
+    background: var(--bg-main);
+    color: var(--text-main);
+    font-family: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    display: flex;
+    min-height: 100vh;
+}
+
+/* --- SIDEBAR NAVIGATION --- */
+.sidebar {
+    width: 280px;
+    background: linear-gradient(180deg, var(--bg-sidebar) 0%, #070a14 100%);
+    border-right: 1px solid rgba(30, 41, 59, 0.7);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 40px 24px;
+    box-sizing: border-box;
+    z-index: 100;
+    box-shadow: 10px 0 30px rgba(4, 7, 17, 0.5);
+}
+
+        .sidebar-brand {
+            font-size: 1.4rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+            position: relative;
+            padding-left: 12px;
+        }
+
+        .sidebar-brand::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 25%;
+            width: 4px;
+            height: 50%;
+            background: var(--accent-blue);
+            border-radius: 4px;
+        }
+
+        .sidebar-brand span {
+            color: var(--accent-blue);
+            font-weight: 400;
+            font-size: 0.9rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: rgba(59, 130, 246, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 4px;
+        }
+
+        .sidebar-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .sidebar-item a {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            border: 1px solid transparent;
+        }
+
+        .sidebar-item.active a {
+            color: #fff;
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.02) 100%);
+            border-color: rgba(59, 130, 246, 0.25);
+        }
+
+        .sidebar-item a:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.02);
+            transform: translateX(4px);
+        }
+
+        /* --- MAIN WORKSPACE --- */
+        .workspace {
+            margin-left: 280px;
+            flex: 1;
+            padding: 40px 1.5em;
+            box-sizing: border-box;
+            max-width: calc(100% - 280px);
+        }
+
+--- FIX FOR INLINE SECTIONS OVERFLOWING ---
+.workspace section {
+    position: relative;
+    width: 100%;
+    height: auto !important;      /* Forces components to size to their content, not the screen */
+    min-height: auto !important;  /* Strips away the giant 100vh structural overrides */
+    padding: 0 !important;        /* Let the workspace container handle the outer layout spacing */
+    margin-bottom: 40px;
+    display: block !important;    /* Prevents flex constraints from warping standard grid layouts */
+}
+
+/* --- SCALING DOWN LANDING TYPOGRAPHY FOR DASHBOARD CONTEXT --- */
+.workspace .reveal-text {
+    font-size: 2.2rem !important; /* Scaled down from a massive 4rem to a professional panel title */
+    line-height: 1.2;
+    margin-bottom: 16px;
+}
+
+.workspace .reveal-desc {
+    font-size: 1rem !important;   /* Scaled down from 1.2rem to fit standard text reading lines */
+    max-width: 600px;
+}
+
+/* --- ADJUSTING WRAPPER CONTAINERS --- */
+.workspace .scroll-container {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)) !important; /* Allows grids to snap dynamically */
+    gap: 32px !important;
+}
+
+.workspace .bento-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; /* Keeps bento items tightly contained */
+    margin-top: 24px !important;
+}
+
+.workspace .modern-workflow-box {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    min-height: auto !important;
+}
+
+/* Target the catalog section inside your dashboard workspace */
+.workspace .results-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important; /* Locks exactly 2 items side-by-side */
+    gap: 24px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Ensure individual cards expand perfectly inside their 50% grid spaces */
+.workspace .results-grid .book-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+}
+
+/* Ensure no flex parent collapses or forces cards down to new lines */
+.workspace .catalog-container {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE APP SIDEBAR SYSTEM FOR MOBILE & TABLETS (MAX-WIDTH: 1024px)
+   ========================================================================== */
+@media (max-width: 1024px) {
+    /* 1. Reset Workspace positioning constraints */
+    .workspace {
+        margin-left: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 80px 24px 40px 24px !important; /* Space at top for mobile header bar */
+        box-sizing: border-box !important;
+    }
+
+    /* 2. Transform Fixed Sidebar into a Hidden Sliding Overlay Drawer Panel */
+    .sidebar {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 280px !important;
+        height: 100vh !important;
+        z-index: 9999 !important; /* Forces it above all 3D canvas planes and graphs */
+        transform: translateX(-100%); /* Slides completely out of view by default */
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 20px 0 40px rgba(0, 0, 0, 0.6);
+        background: #090d1a !important; /* Matches unified dark theme values */
+    }
+
+    /* Active utility state class triggered via JavaScript */
+    .sidebar.mobile-open {
+        transform: translateX(0) !important;
+    }
+
+    /* 3. Inject a Quick Overlay Dimmer Background Backdrop */
+    .sidebar-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(4, 7, 17, 0.7);
+        backdrop-filter: blur(4px);
+        z-index: 9998;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+    
+    .sidebar-backdrop.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* 4. Persistent Global Mobile Header Bar */
+    .mobile-nav-header {
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 64px;
+        background: rgba(11, 15, 25, 0.85);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.05));
+        padding: 0 24px;
+        box-sizing: border-box;
+        z-index: 9990;
+    }
+
+    .mobile-brand-title {
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        color: #fff;
+        font-size: 1.15rem;
+    }
+    .mobile-brand-title span {
+        color: var(--accent-blue, #3b82f6);
+    }
+
+    /* 5. Sleek Floating Hamburger Trigger Button */
+    .mobile-menu-trigger {
+        display: flex !important;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 24px;
+        height: 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        z-index: 10000;
+    }
+
+    .mobile-menu-trigger span {
+        display: block;
+        width: 100%;
+        height: 2px;
+        background-color: #fff;
+        border-radius: 2px;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    
+    /* Elegant transformation animations when menu opens */
+    .mobile-menu-trigger.is-active span:nth-child(1) {
+        transform: translateY(7px) rotate(45deg);
+    }
+    .mobile-menu-trigger.is-active span:nth-child(2) {
+        opacity: 0;
+    }
+    .mobile-menu-trigger.is-active span:nth-child(3) {
+        transform: translateY(-7px) rotate(-45deg);
+    }
+}
+
+/* Fallback hiding properties for high-res desktop screens */
+@media (min-width: 1025px) {
+    .mobile-nav-header, .sidebar-backdrop, .mobile-menu-trigger {
+        display: none !important;
+    }
+}

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiBot OS - Terminal Portal</title>
+    
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        /* --- LANDING PORTAL MASTER LAYOUT OVERRIDES --- */
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        body {
+            background: #040711;
+            overflow-x: hidden;
+            overflow-y: auto;
+            display: block; 
+            height: auto;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* --- STANDARD 100VH FULL SCREEN SECTIONS --- */
+        .full-portal-section {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 8%;
+            box-sizing: border-box;
+            overflow: hidden;
+            perspective: 1000px;
+        }
+
+        .portal-container {
+            max-width: 1200px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 80px;
+            align-items: center;
+            z-index: 5;
+        }
+
+        .reveal-heading {
+            font-size: 4rem;
+            font-weight: 800;
+            line-height: 1.05;
+            margin: 0 0 24px 0;
+            opacity: 0;
+            transform: translateY(60px);
+            color: #fff;
+            letter-spacing: -0.03em;
+        }
+
+        .reveal-heading span {
+            color: #3b82f6;
+            text-shadow: 0 0 30px rgba(59, 130, 246, 0.25);
+        }
+
+        .reveal-subtext {
+            color: #94a3b8;
+            font-size: 1.15rem;
+            line-height: 1.6;
+            max-width: 540px;
+            margin: 0;
+            opacity: 0;
+            transform: translateY(40px);
+        }
+
+        /* --- 3D THREE.JS CANVAS CONTAINER STYLING --- */
+        .stage-3d-hero-wrapper {
+            width: 420px;
+            height: 420px;
+            position: relative;
+            opacity: 0;
+            transform: scale(0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #heroThreeCanvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* --- SECTION 2: RESPONSIVE HARDWARE FRAME / TERMINAL BADGE --- */
+        .capabilities-visual-col {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        .mock-hardware-frame {
+            background: rgba(11, 15, 25, 0.65);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 16px;
+            padding: 36px;
+            width: 100%;
+            max-width: 440px;
+            aspect-ratio: 4 / 3; 
+            box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+            transform-style: preserve-3d;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            transition: border-radius 0.3s ease, background 0.3s ease, padding 0.3s ease;
+        }
+
+        /* Apply 3D Layer transforms only on Desktop screens */
+        @media (min-width: 1025px) {
+            .terminal-badge-header { transform: translateZ(25px); }
+            .hardware-bars-wrapper { transform: translateZ(15px); }
+            .hardware-boxes-wrapper { transform: translateZ(20px); }
+        }
+
+        .terminal-badge-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .badge-dot {
+            display: none; /* Hidden on Desktop, active on Tablet/Mobile */
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #10b981;
+            animation: badgePulse 2s infinite ease-in-out;
+        }
+
+        .status-badge-text {
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin: 0 0 24px 0;
+            color: #3b82f6;
+            letter-spacing: 0.05em;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* Terminal Console Terminal Cursor Animation */
+        .status-badge-text::after {
+            content: "_";
+            margin-left: 3px;
+            font-weight: 900;
+            color: #3b82f6;
+            animation: terminalCursor 1s steps(2, start) infinite;
+        }
+
+        .hardware-bars-wrapper {
+            display: block;
+        }
+
+        .mock-bar {
+            height: 6px;
+            background: #1e293b;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            width: 0%; 
+        }
+
+        .hardware-boxes-wrapper {
+            display: flex;
+            gap: 16px;
+            margin-top: 40px;
+        }
+
+        .mini-box {
+            flex: 1;
+            height: 80px;
+            background: #05070c;
+            border: 1px solid rgba(51, 65, 85, 0.3);
+            border-radius: 8px;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        /* --- SECTION 3: AUTHENTICATE INTERFACE --- */
+        .auth-section-bg {
+            background: #020409;
+            border-top: 1px dashed rgba(59, 130, 246, 0.12);
+            border-bottom: 1px dashed rgba(59, 130, 246, 0.12);
+        }
+
+        .terminal-scaffold {
+            background: #0b0f19;
+            border: 2px solid #1e293b;
+            padding: 56px 48px;
+            border-radius: 8px;
+            max-width: 480px;
+            width: 100%;
+            margin: 0 auto;
+            opacity: 0;
+            transform: translateY(60px);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7);
+            box-sizing: border-box;
+        }
+
+        .terminal-group {
+            position: relative;
+            margin-bottom: 26px;
+        }
+
+        .terminal-group label {
+            display: block;
+            font-family: monospace;
+            color: #475569;
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .terminal-input {
+            width: 100%;
+            padding: 16px;
+            background: #05070c;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #3b82f6;
+            font-size: 1rem;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.25s ease;
+        }
+
+        .terminal-input:focus {
+            border-color: #3b82f6;
+        }
+
+        .terminal-btn {
+            width: 100%;
+            padding: 18px;
+            background: #3b82f6;
+            border: none;
+            color: #fff;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .terminal-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        /* --- SECTION 4: FEATURES BENTO GRID --- */
+        .features-section {
+            background: #040711;
+            height: auto;
+            min-height: 100vh;
+            padding-bottom: 3em;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            width: 90%;
+            max-width: 1200px;
+            margin-block: 64px;
+            box-sizing: border-box;
+        }
+
+        .bento-card {
+            position: relative;
+            background: #0b0f19;
+            border-radius: 14px;
+            padding: 36px;
+            opacity: 0;
+            transform: translateY(50px);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+        }
+
+        .bento-border-svg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+
+        .bento-border-svg rect {
+            width: 100%;
+            height: 100%;
+            fill: none;
+            stroke: #1e293b;
+            stroke-width: 2px;
+            rx: 14px;
+            transition: stroke 0.3s ease;
+        }
+
+        .bento-card h3 { font-size: 1.4rem; margin: 0 0 12px 0; position: relative; z-index: 2; color: #fff; font-weight: 700; }
+        .bento-card p { color: #94a3b8; font-size: 0.95rem; line-height: 1.6; margin: 0; position: relative; z-index: 2; }
+        .bento-wide { grid-column: span 2; }
+
+        /* --- SECTION 5: GET STARTED WORKFLOW --- */
+        .get-started-bg {
+            background: #060a17;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            padding: 120px 8%;
+            height: auto;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modern-workflow-box {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            background: #090d1a;
+            border: 1px solid rgba(59, 130, 246, 0.15);
+            border-radius: 24px;
+            width: 100%;
+            max-width: 1140px;
+            min-height: 560px;
+            box-shadow: 0 40px 100px rgba(0,0,0,0.6);
+            overflow: hidden;
+        }
+
+        .workflow-interactive-left {
+            padding: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .workflow-cards-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 40px;
+        }
+
+        .modern-step-item {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 20px;
+            padding: 24px;
+            background: rgba(255,255,255,0.01);
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 14px;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+
+        .modern-step-item.active {
+            background: rgba(59, 130, 246, 0.08);
+            border-color: #3b82f6;
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.15);
+        }
+
+        .modern-circle-badge {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: #151f32;
+            border: 1px solid #243552;
+            color: #64748b;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modern-step-item.active .modern-circle-badge {
+            background: #3b82f6;
+            border-color: #60a5fa;
+            color: #fff;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .modern-step-txt h4 { font-size: 1.2rem; margin: 0 0 4px 0; color: #94a3b8; }
+        .modern-step-txt p { font-size: 0.9rem; color: #475569; margin: 0; }
+        .modern-step-item.active .modern-step-txt h4 { color: #fff; }
+        .modern-step-item.active .modern-step-txt p { color: #94a3b8; }
+
+        .workflow-graphics-right {
+            background: #050811;
+            padding: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .terminal-preview-window {
+            background: #020408;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            height: 100%;
+            min-height: 320px;
+            padding: 32px;
+            font-family: monospace;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.8);
+            box-sizing: border-box;
+        }
+
+        .preview-pane { display: none; color: #3b82f6; line-height: 1.6; }
+        .preview-pane.active { display: block; }
+        .preview-pane h5 { color: #f8fafc; font-size: 1.1rem; margin: 0 0 14px 0; letter-spacing: 0.05em; }
+
+        .radial-ambient-glow {
+            position: absolute;
+            width: 700px; height: 700px;
+            background: radial-gradient(circle, rgba(59,130,246,0.05) 0%, rgba(0,0,0,0) 70%);
+            pointer-events: none;
+        }
+
+        /* ==========================================================================
+           TABLET & MOBILE BREAKPOINTS (Refactored for Capsule Badge Interface)
+           ========================================================================== */
+
+        /* Screen Sizes Under 1024px -> Transform 3D Card Into Capsule Badge */
+        @media (max-width: 1024px) {
+            .portal-container {
+                grid-template-columns: 1fr !important;
+                gap: 40px !important;
+                text-align: center !important;
+            }
+
+            .portal-container > div {
+                align-items: center !important; 
+            }
+
+            .capabilities-text-col { order: 1; }
+            .capabilities-visual-col { order: 2; width: 100%; }
+
+            .reveal-heading { font-size: 3.2rem; margin-inline: auto; }
+            .reveal-subtext { margin: 0 auto !important; }
+            .stage-3d-hero-wrapper { width: 360px; height: 360px; margin: 0 auto; }
+
+            /* EVOLVES MAIN FRAME TO MINI CAPSULE BADGE */
+            .mock-hardware-frame {
+                aspect-ratio: unset !important;
+                height: auto !important;
+                min-height: auto !important;
+                max-width: max-content !important; 
+                padding: 10px 22px !important;
+                margin: 20px auto 0 auto !important;
+                
+                background: #02050e !important;   
+                border: 1px solid rgba(59, 130, 246, 0.35) !important;
+                border-radius: 30px !important;    
+                box-shadow: 0 0 25px rgba(59, 130, 246, 0.2) !important;
+                
+                transform: none !important;
+                transform-style: flat !important;
+                perspective: none !important;
+            }
+
+            .terminal-badge-header {
+                display: flex !important;
+                align-items: center !important;
+                gap: 10px !important;
+            }
+
+            .badge-dot {
+                display: block !important; 
+            }
+
+            .status-badge-text {
+                margin: 0 !important;
+                font-size: 0.8rem !important;
+                color: #f8fafc !important; 
+                text-shadow: none !important;
+            }
+
+            /* Sync cursor color with capsule style updates */
+            .status-badge-text::after {
+                color: #10b981; 
+            }
+
+            /* SAFELY COLLAPSE INTERNAL DECORATIVE GRAPHS TO PREVENT ARTIFACTING */
+            .hardware-bars-wrapper,
+            .hardware-boxes-wrapper,
+            .mock-bar,
+            .mini-box {
+                display: none !important;
+            }
+
+            /* Other general page structure responsive controls */
+            .bento-grid { grid-template-columns: repeat(2, 1fr); width: 100%; padding: 0 4%; }
+            .modern-workflow-box { grid-template-columns: 1fr; min-height: auto; }
+            .workflow-interactive-left { border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding: 40px; }
+            .workflow-graphics-right { padding: 40px; }
+            .full-portal-section { height: auto !important; min-height: auto !important; padding: 60px 6% !important; }
+        }
+
+        /* Mobile phones and extra small viewports (Max-width: 640px) */
+        @media (max-width: 640px) {
+            .full-portal-section { padding: 80px 4% 40px 4% !important; }
+            .reveal-heading { font-size: 2.4rem !important; line-height: 1.1 !important; }
+            .reveal-subtext { font-size: 1rem !important; }
+            .stage-3d-hero-wrapper { width: 280px !important; height: 280px !important; }
+            .terminal-scaffold { padding: 32px 24px; }
+            .bento-grid { grid-template-columns: 1fr !important; gap: 16px; }
+            .bento-wide { grid-column: span 1; }
+            .bento-card { padding: 24px; }
+            .bento-card h3 { font-size: 1.2rem; }
+            .get-started-bg { padding: 60px 4%; }
+            .modern-step-item { padding: 16px; gap: 12px; }
+            .modern-step-txt h4 { font-size: 1.05rem; }
+            .terminal-preview-window { padding: 20px; min-height: 260px; }
+        }
+
+        /* --- GLOBAL KEYFRAME ANIMATIONS --- */
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(0.9); opacity: 0.4; box-shadow: 0 0 4px #10b981; }
+            50% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px #10b981; }
+        }
+
+        @keyframes terminalCursor {
+            from, to { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <section class="full-portal-section" id="intro">
+        <div class="radial-ambient-glow" style="top: -10%; left: -10%;"></div>
+        <div class="portal-container">
+            <div>
+                <h1 class="reveal-heading">This is<br><span>LiBot OS.</span></h1>
+                <p class="reveal-subtext">A clean, straightforward operations management desk built to monitor your library's floor helper robot, track book placement routes, and oversee book updates.</p>
+            </div>
+            <div style="display: flex; justify-content: center; align-items: center;">
+                <div class="stage-3d-hero-wrapper" id="hero3DContainer">
+                    <div id="heroThreeCanvas"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="full-portal-section" id="capabilities" style="background: #060a17;">
+        <div class="portal-container">
+            <div class="capabilities-text-col">
+                <h2 class="reveal-heading">Kinetic<br><span>Automation</span></h2>
+                <p class="reveal-subtext">Watch interface elements assemble instantly based on physical travel paths. Track sorting movements, active battery metrics, and direct tool options over low-delay controls.</p>
+            </div>
+            <div class="capabilities-visual-col">
+                <div class="mock-hardware-frame" id="tiltingFrame">
+                    <div class="terminal-badge-header">
+                        <span class="badge-dot"></span>
+                        <h3 class="status-badge-text">[ROBOT_CONNECTED_OK]</h3>
+                    </div>
+    
+                    <div class="hardware-bars-wrapper">
+                        <div class="mock-bar bar-1"></div>
+                        <div class="mock-bar bar-2"></div>
+                        <div class="mock-bar bar-3"></div>
+                    </div>
+                    <div class="hardware-boxes-wrapper">
+                        <div class="mini-box box-a"></div>
+                        <div class="mini-box box-b"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="full-portal-section auth-section-bg" id="portal">
+        <div class="radial-ambient-glow" style="top: 20%; right: -10%;"></div>
+        <div class="terminal-scaffold">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; font-family:monospace; font-size:0.8rem; color:#475569;">
+                <span>STATION: CENTRAL_DESK</span>
+                <span style="color:#10b981;">● ONLINE</span>
+            </div>
+            <h2 style="font-size: 2rem; font-weight: 800; margin: 0 0 8px 0; letter-spacing: -0.03em;">AUTHENTICATE</h2>
+            <p style="color: #94a3b8; font-size: 0.9rem; margin: 0 0 32px 0;">Input your librarian credentials to access the robot control system.</p>
+            
+            <form onsubmit="executeRouteTimeline(event)">
+                <div class="terminal-group">
+                    <label>STAFF_ID_NUMBER</label>
+                    <input type="text" class="terminal-input" required placeholder="e.g., LIBRARIAN-MAIN" autocomplete="off">
+                </div>
+                <div class="terminal-group">
+                    <label>SECURITY_PASSWORD</label>
+                    <input type="password" class="terminal-input" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="terminal-btn">Open Control Desk</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="features-section" id="features" style="background: #040711;">
+        <div style="max-width: 1200px; width: 100%; margin: 3rem auto 0rem auto; padding: 0 6%; box-sizing: border-box; text-align: center;">
+            <h2 class="reveal-heading" style="font-size: clamp(2.8rem, 5.5vw, 4rem); line-height: 1.1; margin-inline: auto; width: 100%; max-width: 100%;">
+                Engineered for<br><span>Absolute Control</span>
+            </h2>
+        </div>
+        
+        <div class="bento-grid" style="margin-left: auto; margin-right: auto;">
+            <div class="bento-card bento-wide">
+                <svg class="bento-border-svg"><rect/></svg>
+                <h3>01 / Live Camera Scanning</h3>
+                <p>Monitor position updates of your helper robot across the library floor plan. Visual grids update book status boxes instantly without layout jumps.</p>
+            </div>
+            <div class="bento-card">
+                <svg class="bento-border-svg"><rect/></svg>
+                <h3>02 / Quick Book Logging</h3>
+                <p>Our rapid intake setup allows simple book scans, organizing shelf rows smoothly using clean responsive tracking models.</p>
+            </div>
+            <div class="bento-card">
+                <svg class="bento-border-svg"><rect/></svg>
+                <h3>03 / Instant Status Updates</h3>
+                <p>No waiting on layouts. Information drawers and shelf panes open smoothly on custom display cycles engineered for quick work.</p>
+            </div>
+            <div class="bento-card bento-wide">
+                <svg class="bento-border-svg"><rect/></svg>
+                <h3>04 / Error-Proof Tasks</h3>
+                <p>Independent interface structures keep your work secure. If one catalog refresh has trouble, the main robot operations continue running perfectly.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="get-started-bg" id="setup">
+        <div class="modern-workflow-box">
+            <div class="workflow-interactive-left">
+                <div>
+                    <h3 style="font-size: 2rem; font-weight:800; margin: 0 0 8px 0;">Initialize System Matrix</h3>
+                    <p style="color:#475569; font-size:0.95rem; margin:0;">Select steps to load robot configurations.</p>
+                </div>
+
+                <div class="workflow-cards-stack">
+                    <div class="modern-step-item active" onclick="engageStepPanel(0)">
+                        <div class="modern-circle-badge">01</div>
+                        <div class="modern-step-txt">
+                            <h4>Connect Robot Unit</h4>
+                            <p>Verify helper component hardware connections.</p>
+                        </div>
+                    </div>
+                    <div class="modern-step-item" onclick="engageStepPanel(1)">
+                        <div class="modern-circle-badge">02</div>
+                        <div class="modern-step-txt">
+                            <h4>Build Map Trajectories</h4>
+                            <p>Set up aisle boundaries and shelving areas.</p>
+                        </div>
+                    </div>
+                    <div class="modern-step-item" onclick="engageStepPanel(2)">
+                        <div class="modern-circle-badge">03</div>
+                        <div class="modern-step-txt">
+                            <h4>Start Sorting Loop</h4>
+                            <p>Launch live library sorting routines.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="workflow-graphics-right">
+                <div class="terminal-preview-window">
+                    <div class="preview-pane active">
+                        <h5>[UNIT_SETUP_01]</h5>
+                        <p style="color:#64748b;">// Starting hardware handshake checks...</p>
+                        <p style="color:#10b981; margin-top:10px;">> Connection to LiBot-Unit-01: SECURE</p>
+                        <p style="color:#10b981;">> Helper component linked successfully.</p>
+                    </div>
+                    <div class="preview-pane">
+                        <h5>[FLOOR_MAP_02]</h5>
+                        <p style="color:#64748b;">// Reading coordinate tracking points...</p>
+                        <p style="color:#eab308; margin-top:10px;">> Formatting aisle shelf maps...</p>
+                        <p style="color:#10b981;">> Pathfinding lines verified [OK]</p>
+                    </div>
+                    <div class="preview-pane">
+                        <h5>[SORTING_ENGAGED_03]</h5>
+                        <p style="color:#64748b;">// Status counters sending updates...</p>
+                        <p style="color:#3b82f6; margin-top:10px;">> Syncing incoming book queues...</p>
+                        <p style="color:#10b981;">> Operations ready. Helper active.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        gsap.registerPlugin(ScrollTrigger);
+
+        document.addEventListener("DOMContentLoaded", () => {
+            
+            // ==========================================================================
+            // THREE.JS CANVAS MECHANICS: MECH RECON UNIT
+            // ==========================================================================
+            const container = document.getElementById("hero3DContainer");
+            const scene = new THREE.Scene();
+
+            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 2, 14);
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            const canvasWrapper = document.getElementById("heroThreeCanvas");
+            canvasWrapper.innerHTML = ""; 
+            canvasWrapper.appendChild(renderer.domElement);
+
+            // Light Initialization Nodes
+            const ambientLight = new THREE.AmbientLight(0x0f172a, 1.5);
+            scene.add(ambientLight);
+
+            const blueSpotlight = new THREE.PointLight(0x3b82f6, 12, 30);
+            blueSpotlight.position.set(5, 5, 5);
+            scene.add(blueSpotlight);
+
+            const cyanSpotlight = new THREE.PointLight(0x06b6d4, 8, 30);
+            cyanSpotlight.position.set(-5, -2, 5);
+            scene.add(cyanSpotlight);
+
+            // Robot Body Cluster Definitions
+            const robotGroup = new THREE.Group();
+            const techMetalMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.8 });
+            const wireframeMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, wireframe: true, transparent: true, opacity: 0.25 });
+            const glowingEyeMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
+            const engineGlowMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.6 });
+            
+            // Torso Build
+            const bodyGeo = new THREE.BoxGeometry(2.2, 2.6, 1.8);
+            const bodyMesh = new THREE.Mesh(bodyGeo, techMetalMat);
+            const bodyWire = new THREE.Mesh(bodyGeo, wireframeMat);
+            bodyMesh.add(bodyWire);
+            bodyMesh.position.y = 1.5;
+            robotGroup.add(bodyMesh);
+
+            // Head Cluster
+            const headGroup = new THREE.Group();
+            const headGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6);
+            const headMesh = new THREE.Mesh(headGeo, techMetalMat);
+            const headWire = new THREE.Mesh(headGeo, wireframeMat);
+            headMesh.add(headWire);
+            headGroup.add(headMesh);
+
+            // Scanner Array Eye
+            const eyeGeo = new THREE.BoxGeometry(1.2, 0.18, 0.4);
+            const eyeMesh = new THREE.Mesh(eyeGeo, glowingEyeMat);
+            eyeMesh.position.set(0, 0.1, 0.9);
+            headGroup.add(eyeMesh);
+            headGroup.position.set(0, 3.4, 0);
+            robotGroup.add(headGroup);
+
+            // Articulated Mechanical Limb Structs
+            const armLeftGroup = new THREE.Group();
+            const armRightGroup = new THREE.Group();
+            const shoulderGeo = new THREE.SphereGeometry(0.5, 8, 8);
+            const forearmGeo = new THREE.CylinderGeometry(0.25, 0.25, 1.5);
+            forearmGeo.rotateX(Math.PI / 3);
+
+            const shoulderL = new THREE.Mesh(shoulderGeo, techMetalMat);
+            const forearmL = new THREE.Mesh(forearmGeo, techMetalMat);
+            forearmL.position.set(0.4, -0.8, 0.4);
+            armLeftGroup.add(shoulderL, forearmL);
+            armLeftGroup.position.set(-1.6, 2.4, 0);
+
+            const shoulderR = new THREE.Mesh(shoulderGeo, techMetalMat);
+            const forearmR = new THREE.Mesh(forearmGeo, techMetalMat);
+            forearmR.position.set(-0.4, -0.8, 0.4);
+            armRightGroup.add(shoulderR, forearmR);
+            armRightGroup.position.set(1.6, 2.4, 0);
+
+            robotGroup.add(armLeftGroup, armRightGroup);
+            
+            // Thrust Pad Repulsor
+            const ringGeo = new THREE.RingGeometry(1.8, 2.2, 32);
+            ringGeo.rotateX(Math.PI / 2);
+            const ringMesh = new THREE.Mesh(ringGeo, engineGlowMat);
+            ringMesh.position.y = -0.8;
+            robotGroup.add(ringMesh);
+
+            scene.add(robotGroup);
+            
+            // Kinematic Coordinates Handlers
+            let mouseX = 0, mouseY = 0;
+            window.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth) - 0.5;
+                mouseY = (e.clientY / window.innerHeight) - 0.5;
+            });
+            
+            // Core Rendering Iteration Loop
+            let clock = new THREE.Clock();
+            function animateRobotEngine() {
+                requestAnimationFrame(animateRobotEngine);
+                const time = clock.getElapsedTime();
+
+                robotGroup.position.y = Math.sin(time * 1.5) * 0.25;
+                ringMesh.scale.set(1 + Math.sin(time * 3) * 0.05, 1 + Math.sin(time * 3) * 0.05, 1);
+                armLeftGroup.rotation.z = Math.sin(time * 2) * 0.08;
+                armRightGroup.rotation.z = -Math.sin(time * 2) * 0.08;
+
+                robotGroup.rotation.y += (mouseX * 0.8 - robotGroup.rotation.y) * 0.05;
+                headGroup.rotation.y += (mouseX * 1.2 - headGroup.rotation.y) * 0.08;
+                robotGroup.rotation.x += (-mouseY * 0.4 - robotGroup.rotation.x) * 0.05;
+
+                renderer.render(scene, camera);
+            }
+            animateRobotEngine();
+
+            window.addEventListener("resize", () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            // ==========================================================================
+            // INTERACTIVE COMPONENT CAPABILITIES MECHANICS
+            // ==========================================================================
+            const frame = document.getElementById("tiltingFrame");
+            if (frame) {
+                frame.addEventListener("mousemove", (e) => {
+                    // Safe break: Don't compute complex coordinate rotation formulas on devices under desktop widths
+                    if(window.innerWidth < 1025) return;
+                    
+                    const bounds = frame.getBoundingClientRect();
+                    const mouseX = e.clientX - bounds.left - (bounds.width / 2);
+                    const mouseY = e.clientY - bounds.top - (bounds.height / 2);
+                    gsap.to(frame, { rotateX: -(mouseY / bounds.height) * 20, rotateY: (mouseX / bounds.width) * 20, duration: 0.2, ease: "power1.out" });
+                });
+                frame.addEventListener("mouseleave", () => {
+                    gsap.to(frame, { rotateX: 0, rotateY: 0, duration: 0.4 });
+                });
+            }
+
+            // Bento Interaction Modules
+            document.querySelectorAll(".bento-card").forEach(card => {
+                const rectNode = card.querySelector(".bento-border-svg rect");
+                card.addEventListener("mouseenter", () => {
+                    if(rectNode) gsap.to(rectNode, { stroke: "#3b82f6", duration: 0.3 });
+                    gsap.to(card.querySelector("h3"), { color: "#3b82f6", x: 4, duration: 0.2 });
+                });
+                card.addEventListener("mouseleave", () => {
+                    if(rectNode) gsap.to(rectNode, { stroke: "#1e293b", duration: 0.3 });
+                    gsap.to(card.querySelector("h3"), { color: "#fff", x: 0, duration: 0.2 });
+                });
+            });
+
+            // GSAP Sequencing Timelines
+            gsap.timeline({ scrollTrigger: { trigger: "#intro", start: "top 70%", toggleActions: "play none none reverse" } })
+                .to("#intro .reveal-heading", { opacity: 1, y: 0, duration: 0.5 })
+                .to("#intro .reveal-subtext", { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
+                .to("#hero3DContainer", { opacity: 1, scale: 1, duration: 0.7, ease: "power3.out" }, "-=0.2");
+
+            gsap.timeline({ scrollTrigger: { trigger: "#capabilities", start: "top 70%", toggleActions: "play none none reverse" } })
+                .to("#capabilities .reveal-heading", { opacity: 1, y: 0, duration: 0.5 })
+                .to("#capabilities .reveal-subtext", { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
+                .to("#tiltingFrame", { opacity: 1, scale: 1, duration: 0.6 }, "-=0.4")
+                .to(".bar-1", { width: "100%", duration: 0.3 })
+                .to(".bar-2", { width: "75%", duration: 0.3 }, "-=0.15")
+                .to(".bar-3", { width: "90%", duration: 0.3 }, "-=0.15")
+                .to(".mini-box", { opacity: 1, y: 0, duration: 0.3, stagger: 0.1 }, "-=0.1");
+
+            gsap.to(".terminal-scaffold", { opacity: 1, y: 0, duration: 0.8, scrollTrigger: { trigger: "#portal", start: "top 60%", toggleActions: "play none none reverse" } });
+
+            gsap.timeline({ scrollTrigger: { trigger: "#features", start: "top 60%", toggleActions: "play none none reverse" } })
+                .to("#features .reveal-heading", { opacity: 1, y: 0, duration: 0.5 })
+                .to(".bento-card", { opacity: 1, y: 0, duration: 0.5, stagger: 0.08 }, "-=0.2");
+
+            gsap.from(".modern-step-item", {
+                scrollTrigger: { trigger: "#setup", start: "top 75%" },
+                opacity: 0, x: -40, y: 20, stagger: 0.12, duration: 0.6, ease: "power2.out"
+            });
+        });
+
+        // Interactive Matrix Console Panels Logic Switcher
+        function engageStepPanel(index) {
+            const steps = document.querySelectorAll(".modern-step-item");
+            const panes = document.querySelectorAll(".preview-pane");
+            
+            if(steps[index].classList.contains("active")) return;
+            
+            steps.forEach((s) => {
+                if (s.classList.contains("active")) {
+                    gsap.to(s, { x: 15, opacity: 0.6, duration: 0.2 });
+                }
+                s.classList.remove("active");
+            });
+            steps[index].classList.add("active");
+            
+            gsap.fromTo(steps[index], { x: -20, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" });
+            
+            steps.forEach((s, idx) => {
+                if (idx !== index) gsap.to(s, { x: 0, opacity: 1, duration: 0.3 });
+            });
+
+            gsap.to(".terminal-preview-window", {
+                opacity: 0.3, duration: 0.1, yoyo: true, repeat: 1,
+                onComplete: () => {
+                    panes.forEach(p => p.classList.remove("active"));
+                    panes[index].classList.add("active");
+                    gsap.fromTo(panes[index].querySelectorAll("p"), { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.25, stagger: 0.05 });
+                }
+            });
+        }
+
+        // Authentication Submission Handler
+        function executeRouteTimeline(e) {
+            e.preventDefault();
+            gsap.to(".terminal-scaffold", { 
+                opacity: 0, y: -40, scale: 0.95, duration: 0.35, ease: "power3.in",
+                onComplete: () => { window.location.href = "dashboard.html"; }
+            });
+        }
+    </script>
+</body>
+</html>
