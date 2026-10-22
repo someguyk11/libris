@@ -1,0 +1,176 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
+/* LIBRIS COMPONENTS
+   Hero styles live (scoped) in Hero.vue
+========================================================== */
+
+* {
+    padding: 0;
+    margin: 0;
+}
+
+body {
+    background-color: var(--bg-primary);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+}
+
+/* ==========================================================
+   BOTTOM NAV
+========================================================== */
+
+.bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4.6rem;
+    padding-bottom: env(safe-area-inset-bottom);
+    display: flex;
+    align-items: center;
+    justify-content: space-evenly;
+    background: rgba(18, 19, 26, .92);
+    border-top: 1px solid var(--border-soft);
+    backdrop-filter: blur(20px);
+    z-index: 1000;
+}
+
+.bottom-nav__item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: .25rem;
+    height: 100%;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: .25s ease;
+}
+
+.bottom-nav__icon {
+    font-size: 1.45rem;
+    line-height: 1;
+    transition: .25s ease;
+}
+
+.bottom-nav__label {
+    font-family: var(--font-body);
+    font-size: .72rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.bottom-nav__item--active {
+    color: var(--accent);
+    transition: color .2s ease;
+}
+
+.bottom-nav__item--active .bottom-nav__icon {
+    transition: transform .25s cubic-bezier(.22, 1, .36, 1);
+}
+
+.bottom-nav__item--active .bottom-nav__icon {
+    font-variation-settings:
+        "FILL" 1,
+        "wght" 500,
+        "GRAD" 0,
+        "opsz" 24;
+}
+
+.bottom-nav__item:not(.bottom-nav__item--active) .bottom-nav__icon {
+    font-variation-settings:
+        "FILL" 0,
+        "wght" 400,
+        "GRAD" 0,
+        "opsz" 24;
+}
+
+.bottom-nav__item:active {
+    transform: scale(.96);
+}
+
+.filter-chips {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    width: 100%;
+
+    overflow-x: auto;
+    overflow-y: hidden;
+
+    padding: 2px 0 6px;
+
+    scrollbar-width: none;
+
+    -webkit-overflow-scrolling: touch;
+}
+
+.filter-chips::-webkit-scrollbar {
+    display: none;
+}
+
+
+.filter-chip {
+    flex: 0 0 auto;
+
+    height: 34px;
+
+    padding: 0 13px;
+
+    border: 1px solid var(--border-subtle);
+
+    border-radius: 10px;
+
+    background: var(--surface-1);
+
+    color: var(--text-secondary);
+
+    font-family: "Manrope", sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+
+    white-space: nowrap;
+
+    cursor: pointer;
+
+    transition:
+        background-color 180ms ease,
+        border-color 180ms ease,
+        color 180ms ease,
+        box-shadow 180ms ease,
+        transform 180ms ease;
+}
+
+.filter-chip:active {
+    transform: scale(0.96);
+}
+
+
+/* Active */
+
+.filter-chip.active {
+    border-color: var(--accent);
+
+    background: var(--accent);
+
+    color: #ffffff;
+
+    box-shadow:
+        0 0 14px rgba(167, 139, 250, 0.22);
+}
+
+
+/* Hover */
+
+@media (hover: hover) {
+    .filter-chip:not(.active):hover {
+        border-color: var(--accent-dim);
+
+        color: var(--text-primary);
+
+        background: var(--surface-2);
+    }
+}

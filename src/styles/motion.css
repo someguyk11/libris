@@ -1,0 +1,137 @@
+/* ==========================================================
+   LIBRIS MOTION FOUNDATION
+   Quiet, immersive, atmospheric vs. flashy.
+   Primary GSAP easing: power3.out
+   Animate transform + opacity. Avoid width/height/top/left.
+   ========================================================== */
+
+:root {
+
+    /* Duration */
+    --motion-instant: 100ms;
+    --motion-fast: 160ms;
+    --motion-normal: 240ms;
+    --motion-medium: 360ms;
+    --motion-slow: 500ms;
+    --motion-page: 650ms;
+
+    /* Easing */
+    --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-exit: cubic-bezier(0.7, 0, 0.84, 1);
+    --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Motion distances */
+    --motion-distance-sm: 4px;
+    --motion-distance-md: 8px;
+    --motion-distance-lg: 16px;
+    --motion-distance-xl: 24px;
+
+}
+
+/* Ensure initial hidden states never flash before GSAP takes over */
+[data-motion="off"] *, [data-motion="off"] *::before, [data-motion="off"] *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+}
+[data-motion="off"] :is(.book-card, .library-row, .collection-card, .curator-card, .reading-path-card, .room-card, .path-card, .journey-card, .genre-tile, .spotlight):hover,
+[data-motion="off"] .search-wrapper:focus-within,
+[data-motion="off"] .action-button:hover { transform: none !important; translate: none !important; }
+[data-motion="off"] button:active { scale: none !important; }
+[data-motion="off"] :is(button, .book-card, .path-card, .journey-card, .collection-card, .room-entry):is(:hover, :active) { scale: none !important; translate: none !important; }
+[data-motion="off"] :is(.book-card, .collection-card):active { transform: none !important; }
+
+.is-motion-ready [data-motion] {
+    visibility: hidden;
+}
+
+/* Consistent feedback for mouse, touch, and keyboard interactions. */
+:where(button, a, [role="button"]):focus-visible {
+    outline: 2px solid var(--accent-hover);
+    outline-offset: 4px;
+}
+
+:where(button:not(:disabled), .path-card, .journey-card, .collection-card, .genre-tile, .spotlight) {
+    transition: scale var(--motion-fast) var(--ease-standard),
+        translate var(--motion-normal) var(--ease-standard),
+        background-color var(--motion-fast) var(--ease-standard),
+        border-color var(--motion-fast) var(--ease-standard),
+        box-shadow var(--motion-normal) var(--ease-standard),
+        color var(--motion-fast) var(--ease-standard);
+}
+
+.settings-group button,
+.activity-list button {
+    transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.settings-group button > i,
+.activity-list button > i,
+.search-icon {
+    transition: translate var(--motion-fast) var(--ease-standard),
+        color var(--motion-fast) var(--ease-standard);
+}
+
+.search-wrapper:focus-within .search-icon {
+    color: var(--accent-hover);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    :is(.path-card, .journey-card, .collection-card, .genre-tile, .spotlight):hover {
+        translate: 0 -3px;
+        border-color: rgba(179, 136, 255, .35);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, .24);
+    }
+
+    :is(.settings-group, .activity-list) button:hover {
+        background-color: var(--accent-faint);
+    }
+
+    :is(.settings-group, .activity-list) button:hover > i {
+        translate: 3px 0;
+        color: var(--accent-hover);
+    }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    :where(button:not(:disabled), .path-card, .journey-card, .collection-card):active {
+        scale: .98;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    :root {
+        --motion-instant: 1ms;
+        --motion-fast: 1ms;
+        --motion-normal: 1ms;
+        --motion-medium: 1ms;
+        --motion-slow: 1ms;
+        --motion-page: 1ms;
+    }
+
+    [data-motion],
+    [data-motion-stagger] > * {
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    /* Cards should not physically move on hover for reduced motion users. */
+    .book-card:hover,
+    .collection-card:hover,
+    .curator-card:hover,
+    .reading-path-card:hover,
+    .room-card:hover {
+        transform: none !important;
+    }
+
+    .search-wrapper:focus-within {
+        transform: none !important;
+    }
+
+    .action-button:hover {
+        transform: none !important;
+    }
+}

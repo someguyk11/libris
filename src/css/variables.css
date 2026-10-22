@@ -1,0 +1,159 @@
+:root {
+
+    /* ================================
+       BACKGROUNDS
+    ================================= */
+
+    --bg-primary: #080610;
+    --page-gradient: radial-gradient(circle at 18% 0, rgba(94,50,156,.18), transparent 28rem), radial-gradient(circle at 92% 28%, rgba(33,82,118,.11), transparent 26rem), #07060d;
+    --bg-secondary: #110E19;
+    --bg-tertiary: #181321;
+
+    --bg-surface: #13101D;
+    --bg-surface-hover: #1A1626;
+    --surface: var(--bg-surface);
+    --surface-1: var(--bg-surface);
+    --surface-2: var(--bg-tertiary);
+
+
+    /* ================================
+       TEXT
+    ================================= */
+
+    --text-primary: #F3F0EA;
+    --text-secondary: #B8B3BA;
+    --text-tertiary: #A9A6BE;
+    --text-muted: var(--text-tertiary);
+    --text-disabled: #514D55;
+
+/* =================================
+   BRAND — AMETHYST
+=============================== */
+
+--brand-50:  #F8F5FC;
+--brand-100: #EEE7F7;
+--brand-200: #DCCDEB;
+--brand-300: #C6ACDC;
+--brand-400: #AD8BD0;
+--brand-500: #9469C0;
+--brand-600: #7B50A5;
+--brand-700: #623F86;
+--brand-800: #4B3067;
+--brand-900: #352247;
+--brand-950: #21152E;
+
+/* =================================
+   AMETHYST ACCENT — luminous lavender/pink
+   Brighter, richer than the muted brand scale.
+=============================== */
+
+--amethyst-100: #F3E9FF;
+--amethyst-200: #E2CFFF;
+--amethyst-300: #A78BFA;
+--amethyst-400: #8F70E6;
+--amethyst-500: #6C53C9;
+
+    /* ================================
+       ACCENT — AMETHYST
+    ================================= */
+
+    --accent: #A978FA;
+    --accent-hover: #C494FF;
+    --accent-dim: #A78BFA;
+    --accent-soft: rgba(179, 136, 255, 0.14);
+    --accent-faint: rgba(179, 136, 255, 0.08);
+    --accent-glow: #CFA6FF;
+    --primary: var(--accent);
+
+    /* ================================
+       BORDERS
+    ================================= */
+
+    --border-subtle: rgba(243, 240, 234, 0.07);
+    --border-soft: rgba(243, 240, 234, 0.09);
+    --border-default: rgba(243, 240, 234, 0.11);
+    --border: var(--border-default);
+    --border-strong: rgba(243, 240, 234, 0.18);
+
+
+    /* ================================
+       OVERLAYS
+    ================================= */
+
+    --overlay-dark: rgba(13, 12, 16, 0.55);
+    --overlay-surface: rgba(20, 19, 25, 0.88);
+
+
+    /* ================================
+       STATES
+    ================================= */
+
+    --success: #7EA88A;
+    --warning: #C6A56B;
+    --error: #C77D7D;
+
+
+    /* ================================
+       SHADOWS
+    ================================= */
+
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.18);
+    --shadow-deep: 0 20px 50px rgba(0, 0, 0, 0.28);
+
+
+    /* ================================
+       RADIUS
+    ================================= */
+
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-xl: 28px;
+
+    /* ================================
+       LAYOUT
+    ================================= */
+
+    --content-width: 1200px;
+    --page-padding-mobile: 1.25rem;
+    --page-padding-tablet: 2rem;
+    --page-padding-desktop: 2rem;
+
+    --section-gap: 2.5rem;
+    --card-gap: 1.25rem;
+    --rail-gap: 1rem;
+
+
+    /* ================================
+       SPACING
+    ================================= */
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 40px;
+    --space-9: 48px;
+    --space-10: 64px;
+
+
+    /* ================================
+       TYPOGRAPHY
+    ================================= */
+
+    --font-body: "Manrope", sans-serif;
+    --font-display: "Cormorant Garamond", serif;
+
+
+    /* ================================
+       MOTION
+    ================================= */
+
+    --transition-fast: 160ms ease;
+    --transition-base: 240ms ease;
+    --transition-slow: 400ms ease;
+
+}

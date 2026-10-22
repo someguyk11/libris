@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Connectivity · Atlas-01</title>
+<style>
+:root{font:16px/1.5 Consolas,"Courier New",monospace;color:#e4e3ff;background:#080914;--muted:#8988b8;--line:#292b50;--accent:#aa89ff;--secondary:#aaa4f5}
+*{box-sizing:border-box}body{margin:0}main{width:calc(100% - 64px);max-width:1160px;margin:auto;padding:40px 0 48px}
+h1,h2,p{margin:0}h1{font-size:44px;line-height:1.2;font-weight:500;letter-spacing:1px;color:#cfcbff}header p{font-size:18px;color:var(--muted);margin-top:16px;max-width:680px}
+.identity{display:flex;align-items:center;gap:32px;margin:32px 0}.unit{border-left:4px solid #7950f2;padding-left:24px}.unit strong{display:block;font-size:28px;font-weight:500;letter-spacing:2px}.unit span{display:block;font-size:14px;color:var(--muted);letter-spacing:.5px}.robot{width:64px;height:60px;flex-shrink:0;color:var(--accent)}
+form{padding:28px 32px;background:#0d0e1d;border:1px solid var(--line);border-radius:12px}h2{font-size:21px;line-height:1.4;font-weight:500;letter-spacing:1px;color:var(--secondary);text-transform:uppercase}form h2{margin-bottom:20px}label{display:block;font-size:16px;color:#c2bdf5;margin:22px 0 8px}form h2+label{margin-top:0}
+input{display:block;width:100%;min-width:0;height:64px;padding:16px 20px;background:#0a0b16;border:1px solid #36365e;border-radius:6px;font:18px Consolas,"Courier New",monospace;color:inherit}input::placeholder{color:#7777a8}.password{display:flex;align-items:center;background:#0a0b16;border:1px solid #36365e;border-radius:6px}.password input{border:0;background:none}.password:focus-within{outline:2px solid var(--accent);outline-offset:3px}.password input:focus{outline:none}
+button{font:inherit;color:inherit;cursor:pointer;min-height:44px;border:0;background:none;padding:8px 0}button:focus-visible,input:focus{outline:2px solid var(--accent);outline-offset:3px}button:disabled{cursor:default;opacity:.6}.text-button{color:var(--accent);font-size:15px;white-space:nowrap}.password button{padding:0 20px;min-width:76px;color:var(--secondary);font-size:14px}.hint{font-size:12px;color:var(--muted);margin-top:8px}.actions{display:flex;gap:24px;margin-top:26px}.actions button{flex:1;min-width:0;min-height:60px;border:1px solid #7771b6;border-radius:6px;font-size:19px;color:var(--secondary)}.actions .primary{background:#7950f2;border-color:#7950f2;color:#fff}.actions .primary:disabled{opacity:1;background:#5439a5;color:#c4b9e6;border-color:#6650b0}
+.feedback{font-size:14px;margin-top:16px;overflow-wrap:anywhere}.feedback:empty{display:none}[data-tone=error]{color:#f1adb8}[data-tone=success]{color:#b9d9c9}
+.networks,.saved{margin-top:40px}.heading{display:flex;align-items:center;gap:22px;margin-bottom:8px}.heading h2{font-size:20px;flex-shrink:0}.heading:after{content:"";height:1px;background:#55518a;flex:1}.heading button{order:1}.list{padding:0;margin:0;list-style:none}.row{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--line)}.network{flex:1;min-width:0;min-height:72px;padding:14px 10px;display:flex;align-items:center;gap:24px;text-align:left}.network:before{content:"";width:30px;height:24px;flex-shrink:0;background:currentColor;color:#8278c5;mask:url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 20"%3E%3Cpath fill="black" d="M0 5a18 18 0 0 1 24 0l-3 3a14 14 0 0 0-18 0zm5 5a10 10 0 0 1 14 0l-3 3a6 6 0 0 0-8 0zm4 5a4 4 0 0 1 6 0l-3 4z"/%3E%3C/svg%3E') center/contain no-repeat}.network:after{content:"";width:9px;height:9px;border:solid #8278c5;border-width:2px 2px 0 0;transform:rotate(45deg);flex-shrink:0;margin:0 4px}.name{flex:1;min-width:0;overflow-wrap:anywhere;font-size:18px}.meta{font-size:12px;color:var(--muted);text-align:right}.network[aria-pressed=true]{background:#7950f210}.network[aria-pressed=true]:before,.network[aria-pressed=true] .meta{color:var(--accent)}.forget{font-size:13px;color:#edb5c7;padding:8px}.empty{font-size:14px;color:var(--muted);padding:16px 0}.empty:empty{display:none}footer{margin-top:36px;color:var(--muted);font-size:12px;max-width:720px}footer p+p{margin-top:8px}#link{color:var(--secondary)}[hidden]{display:none!important}
+@media(max-width:600px){main{width:calc(100% - 48px);padding-top:32px}h1{font-size:34px;letter-spacing:0}header p{font-size:15px;line-height:1.6;margin-top:14px}.identity{margin:28px 0;gap:24px}.unit{padding-left:18px}.unit strong{font-size:24px}.unit span{font-size:12px}.robot{width:54px;height:52px}form{padding:24px 20px}h2{font-size:19px}label{font-size:15px}input{height:58px;padding:14px;font-size:17px}.password button{padding:0 14px;min-width:64px}.actions{gap:12px;margin-top:22px}.actions button{min-height:54px;font-size:17px}.networks,.saved{margin-top:32px}.heading{gap:12px}.heading h2{font-size:15px;letter-spacing:.5px}.text-button{font-size:12px}.network{min-height:66px;gap:14px;padding:12px 2px}.network:before{width:24px;height:22px}.name{font-size:16px}.meta{font-size:10px;max-width:76px}.network:after{width:7px;height:7px}.row{gap:6px}}
+@media(max-width:360px){main{width:calc(100% - 32px)}form{padding:20px 16px}.heading{gap:8px}.heading h2{font-size:14px}.meta{max-width:58px}.network{gap:10px}}@media(max-width:280px){.actions{flex-direction:column}.heading{flex-wrap:wrap}.unit strong{font-size:20px}.identity{gap:12px}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>Connectivity</h1><p>Connect to your Atlas device and set up its Wi-Fi connection.</p></header>
+<div class="identity"><div class="unit"><strong>ATLAS-01</strong><span>CONNECT TO DEVICE</span></div><svg class="robot" viewBox="0 0 64 60" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M32 7v9M18 49h28M8 27H3v12h5m48-12h5v12h-5"/><rect x="9" y="17" width="46" height="29" rx="7"/><circle cx="23" cy="31" r="2" fill="currentColor"/><circle cx="41" cy="31" r="2" fill="currentColor"/><circle cx="32" cy="5" r="2" fill="currentColor"/></svg></div>
+<form id="form" action="/connect" method="post">
+<h2>Wi-Fi credentials</h2>
+<label for="ssid">Network Name (SSID)</label><input id="ssid" name="ssid" placeholder="Enter Wi-Fi network name" maxlength="31" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+<label for="pass">Password</label><div class="password"><input id="pass" name="pass" type="password" maxlength="63" placeholder="Enter password" autocomplete="new-password" aria-describedby="password-hint"><button id="reveal" type="button" aria-controls="pass" aria-pressed="false">Show</button></div>
+<p id="password-hint" class="hint">Leave blank for an open network.</p>
+<div class="actions"><button id="save" type="button" disabled>Save</button><button id="connect" class="primary" type="submit" disabled>Connect</button></div>
+<p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+</form>
+<section class="networks" aria-labelledby="available-title"><div class="heading"><h2 id="available-title">Available networks</h2><button id="scan" class="text-button" type="button">Scan networks</button></div><p id="scan-state" class="empty" role="status">Scan to find a network, or enter its name above.</p><ul id="available" class="list"></ul></section>
+<section class="saved" aria-labelledby="saved-title"><div class="heading"><h2 id="saved-title">Saved networks</h2><button id="manage" class="text-button" type="button" aria-expanded="false" disabled>Manage</button></div><p id="saved-state" class="empty" role="status">Loading saved networks…</p><ul id="history" class="list"></ul></section>
+<footer><p id="link" role="status">Checking connection…</p><p>This local setup network is open. Configure Atlas in a trusted location. Setup closes after a successful connection.</p></footer>
+<noscript><p>JavaScript is needed to save or connect to a network.</p></noscript>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let saved=[],networks=[],slot=null,managing=false,busy=false,scanning=false,pending=null,queue=Promise.resolve(),done=false;
+const bytes=s=>new TextEncoder().encode(s).length;
+function message(text,tone=''){ $('feedback').textContent=text;$('feedback').dataset.tone=tone; }
+function api(path,data){
+ const task=async()=>{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),7000);try{const r=await fetch(path,{method:data?'POST':'GET',cache:'no-store',signal:controller.signal,...(data?{headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{})});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed. Please try again.');return j;}finally{clearTimeout(timer);}};
+ const request=queue.then(task);queue=request.catch(()=>{});return request;
+}
+function controls(){
+ $('save').disabled=busy||!$('ssid').value||slot!==null;$('connect').disabled=busy||!$('ssid').value;
+ $('ssid').disabled=busy;$('pass').disabled=busy;$('scan').disabled=busy||scanning;$('manage').disabled=busy||!saved.length;
+ $('save').textContent=busy&&pending?.kind==='save'?'Saving…':'Save';$('connect').textContent=busy&&pending?.kind==='connect'?'Connecting…':'Connect';
+ document.querySelectorAll('.network,.forget').forEach(b=>b.disabled=busy);
+}
+function choose(name,index=null){const changed=$('ssid').value!==name;$('ssid').value=name;slot=index;if(changed||index!==null)$('pass').value='';$('password-hint').textContent=index!==null?'Saved password will be used when connecting.':'Leave blank for an open network.';render();controls();}
+function row(name,detail,selected,select){
+ const li=document.createElement('li'),button=document.createElement('button'),label=document.createElement('span'),meta=document.createElement('span');li.className='row';button.type='button';button.className='network';button.setAttribute('aria-pressed',String(selected));label.className='name';label.textContent=name;meta.className='meta';meta.textContent=selected?'Selected · '+detail:detail;button.append(label,meta);button.onclick=select;li.append(button);return li;
+}
+function render(){
+ $('available').replaceChildren();for(const n of networks){if(!n.ssid)continue;const quality=n.rssi>=-60?'Strong':n.rssi>=-75?'Fair':'Weak';$('available').append(row(n.ssid,quality,$('ssid').value===n.ssid,()=>choose(n.ssid)));}
+ $('history').replaceChildren();for(const p of saved){const li=row(p.ssid,'Saved',slot===p.slot,()=>choose(p.ssid,p.slot));if(managing){const b=document.createElement('button');b.type='button';b.className='forget';b.textContent='Forget';b.setAttribute('aria-label','Forget '+p.ssid);b.onclick=()=>action('forget',p);li.append(b);}$('history').append(li);}controls();
+}
+async function history(){try{saved=await api('/history');$('saved-state').textContent=saved.length?'':'No saved networks yet.';render();}catch(e){$('saved-state').textContent='Could not load saved networks. Try Manage again.';$('manage').disabled=false;}}
+function finish(text,tone){busy=false;pending=null;message(text,tone);controls();}
+async function action(kind,profile){
+ if(busy)return;
+ let data;if(kind==='forget')data={slot:profile.slot};else if(kind==='connect'&&slot!==null)data={slot};else{
+ if(!$('form').reportValidity())return;
+ const ssid=$('ssid').value,pass=$('pass').value;
+ if(bytes(ssid)>31||bytes(pass)>63||(bytes(pass)>0&&bytes(pass)<8)){message('Use a network name up to 31 bytes and a password of 8–63 bytes, or leave it blank for an open network.','error');return;}
+ data={ssid,pass};if(bytes(JSON.stringify(data))>256){message('These credentials exceed the setup request limit.','error');return;}
+ }
+ busy=true;pending={kind,ssid:profile?.ssid||$('ssid').value,at:Date.now(),operation:null};controls();message(kind==='forget'?'Removing saved network…':kind==='save'?'Saving network…':'Connecting to network…');
+ try{const r=await api('/'+(kind==='forget'?'forget':kind==='save'?'save':'connect'),data);pending.operation=r.operation;pending.waitStorage=r.pending;}catch(e){finish(e.message||'Could not reach Atlas. Please try again.','error');}
+}
+async function poll(){
+ try{
+ const s=await api('/status');$('link').textContent=s.connected?'Connected to '+s.currentSsid:s.connecting?'Connecting to '+s.attemptSsid:'Ready for network setup';
+ if(pending&&pending.operation!==null){
+ if(s.operation!==pending.operation){finish('The network settings changed elsewhere. Check and try again.','error');}
+ else if(pending.waitStorage&&s.operationStatus==='failed'){finish('Could not save the network change. Please try again.','error');}
+ else if(!pending.waitStorage||s.operationStatus==='complete'){
+ const kind=pending.kind;
+ if(kind!=='connect'){const name=pending.ssid;await history();if(kind==='save'){const p=saved.find(p=>p.ssid===name);if(p)choose(p.ssid,p.slot);}if(kind==='forget'&&slot!==null){slot=null;$('password-hint').textContent='Leave blank for an open network.';}finish(kind==='save'?'Network saved. Select Connect when you are ready.':'Saved network removed.','success');}
+ else if(s.connected&&s.currentSsid===pending.ssid){done=true;$('pass').value='';finish('Connected to '+s.currentSsid+'. You can close this page.','success');}
+ else if(s.connectionFailed&&s.attemptSsid===pending.ssid){finish('Could not connect. Check the password and network range, then try again.','error');}
+ }
+ }
+ if(pending&&Date.now()-pending.at>20000)finish('Atlas has not confirmed this change. Check the network and try again.','error');
+ }catch(e){$('link').textContent=done?'Connection confirmed. Setup is closed.':'Local setup is unavailable. Rejoin the setup network to check Atlas.';if(pending)finish('Setup connection lost. Rejoin the setup network to check whether the change succeeded.','error');}
+ setTimeout(poll,1200);
+}
+$('form').onsubmit=e=>{e.preventDefault();action('connect');};$('save').onclick=()=>action('save');
+$('reveal').onclick=()=>{const show=$('pass').type==='password';$('pass').type=show?'text':'password';$('reveal').textContent=show?'Hide':'Show';$('reveal').setAttribute('aria-pressed',String(show));};
+for(const id of ['ssid','pass'])$(id).oninput=()=>{slot=null;$('password-hint').textContent='Leave blank for an open network.';render();};
+$('manage').onclick=()=>{managing=!managing;$('manage').textContent=managing?'Done':'Manage';$('manage').setAttribute('aria-expanded',String(managing));history();};
+$('scan').onclick=async()=>{
+ if(scanning||busy)return;scanning=true;controls();$('scan').textContent='Scanning…';$('scan-state').textContent='Looking for nearby networks…';const start=Date.now();
+ try{let s;do{s=await api('/scan');if(s.error)throw Error(s.error);if(!s.scanning)break;if(Date.now()-start>15000)throw Error('Scanning took too long. Try again, or enter the network name.');await new Promise(r=>setTimeout(r,800));}while(true);networks=s.networks||[];render();$('scan-state').textContent=networks.some(n=>n.ssid)?'':'No visible networks found. You can enter a network name above.';}
+ catch(e){$('scan-state').textContent=e.message||'Could not scan. Enter the network name or try again.';}
+ finally{scanning=false;$('scan').textContent='Scan networks';controls();}
+};
+history().then(poll);controls();
+</script>
+</body>
+</html>

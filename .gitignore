@@ -1,0 +1,59 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.vercel
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python backend
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage/
+venv/
+
+# Atlas device provisioning / build artifacts
+hardware/Atlas/src/AtlasSecrets.local.h
+hardware/Atlas/.pio/
+
+# Private credentials / device backups (keep documented example files)
+*.key
+*.pem
+*.p12
+*.pfx
+backups/
+.playwright-mcp/
