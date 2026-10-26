@@ -14,7 +14,10 @@ def positive(name, default):
 
 
 def allowed_origins():
-    return tuple(value.strip() for value in os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if value.strip())
+    origins = tuple(value.strip() for value in os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if value.strip())
+    if not origins or any('*' in origin or urlsplit(origin).scheme not in ('http', 'https') or not urlsplit(origin).hostname or urlsplit(origin).username or urlsplit(origin).password or urlsplit(origin).path or urlsplit(origin).query or urlsplit(origin).fragment for origin in origins):
+        raise ValueError('CORS_ORIGINS must contain exact origins without paths or wildcards')
+    return origins
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,7 @@ class AuthConfig:
     encryption_key: str
     security_secret: str
     secure_cookie: bool
+    cookie_samesite: str
     session_seconds: int
     idle_seconds: int
     recovery_seconds: int
@@ -49,6 +53,7 @@ def get_config():
         encryption_key=os.getenv('AUTH_SESSION_ENCRYPTION_KEY', ''),
         security_secret=os.getenv('AUTH_SECURITY_SECRET', ''),
         secure_cookie=os.getenv('AUTH_COOKIE_SECURE', 'true').lower() == 'true',
+        cookie_samesite=os.getenv('AUTH_COOKIE_SAMESITE', 'lax').lower(),
         session_seconds=positive('AUTH_SESSION_SECONDS', 604800),
         idle_seconds=positive('AUTH_IDLE_SECONDS', 1800),
         recovery_seconds=positive('AUTH_RECOVERY_SECONDS', 600),
@@ -59,6 +64,10 @@ def get_config():
         send_limit=positive('AUTH_EMAIL_SEND_LIMIT', 3),
         send_window=positive('AUTH_EMAIL_SEND_WINDOW_SECONDS', 900),
     )
+    if config.cookie_samesite not in ('lax', 'strict', 'none'):
+        raise ValueError('AUTH_COOKIE_SAMESITE must be lax, strict, or none')
+    if config.cookie_samesite == 'none' and not config.secure_cookie:
+        raise ValueError('SameSite=None requires AUTH_COOKIE_SECURE=true')
     if not config.enabled:
         return config
     parsed = urlsplit(config.url)
@@ -85,8 +94,6 @@ def get_config():
     if not config.secure_cookie and not development:
         raise ValueError('Insecure cookies are allowed only with AUTH_ENV=development')
     origins = allowed_origins()
-    if not origins or any(origin == '*' or urlsplit(origin).scheme not in ('http', 'https') or urlsplit(origin).netloc == '' or urlsplit(origin).path or urlsplit(origin).query or urlsplit(origin).fragment for origin in origins):
-        raise ValueError('CORS_ORIGINS must contain exact origins without paths or wildcards')
     if not development and any(not origin.startswith('https://') for origin in origins):
         raise ValueError('Production authentication requires HTTPS frontend origins')
     if config.min_password > 128:

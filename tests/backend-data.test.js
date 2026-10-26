@@ -50,7 +50,7 @@ test('API client encodes searches/identifiers and reports server validation and 
     let captured
     globalThis.fetch = async (url, options) => { captured = { url, options }; return new Response(JSON.stringify({ status: 200, data: {} })) }
     await backend.books('%')
-    assert.equal(captured.url, '/api/book/search/%25')
+    assert.equal(captured.url, '/api/book/search/%25?limit=50&offset=0')
     await backend.command('AT/001', 'backward')
     assert.equal(captured.url, '/api/robot/AT%2F001/command')
     assert.deepEqual(JSON.parse(captured.options.body), { command: 'backward' })

@@ -45,6 +45,8 @@ def apply_result(robot_id, body: ExecutionResult):
             raise HTTPException(409, 'Conflicting result for an acknowledged command.')
         return {'status': 200, 'data': {'command_id': str(body.command_id), 'execution_status': receipt['status'], 'acknowledged': True}}
     command = get_command(robot_id, body)
+    if command.get('interrupted') and body.status == 'completed':
+        raise HTTPException(409, 'Command was interrupted by recovery; it cannot complete successfully.')
     if command['status'] == 'queued':
         raise HTTPException(409, 'Cannot acknowledge a command before firmware delivery.')
     if command['status'] in ('completed', 'failed'):
@@ -53,6 +55,14 @@ def apply_result(robot_id, body: ExecutionResult):
     elif body.status == 'started':
         command['status'] = 'started'
     else:
+        if body.status == 'completed' and command['command'] != 'stop':
+            if command['status'] != 'started':
+                raise HTTPException(409, 'Measured completion requires a start acknowledgement.')
+            from atlas_schemas import validate_measured_motion
+            try:
+                validate_measured_motion(command['command'], body.movement)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from None
         if body.sensor_readings is not None:
             key = sample_key(body.captured_at)
             readings = body.sensor_readings.model_dump(mode='json', exclude_none=True)
@@ -109,6 +119,10 @@ def start_recording(robot_id: str, body: RecordingStart, db: Session = Depends(g
             raise HTTPException(404, 'Register this robot first.')
         checkpoint(db, body.start_checkpoint_id, active=True)
         robot = runtime.state(robot_id)
+        from atlas_recovery import expire
+        recovery = expire(robot)
+        if recovery and recovery['status'] in ('queued', 'accepted'):
+            raise HTTPException(409, 'Wait for connection recovery before starting a recording.')
         if robot.get('guidance_task_id'):
             raise HTTPException(409, 'Atlas is reserved for guidance; recording cannot start.')
         if robot['recording_id']:
@@ -182,7 +196,9 @@ def save_recording(recording_id: UUID, body: RecordingSave, db: Session = Depend
             return JSONResponse(status_code=202, content={'status': 'finalizing', 'recording_id': recording['id'], 'message': 'Stop requested. Waiting for all ESP32 execution results; no route has been persisted.'})
         segments = []
         for command in commands:
-            segment = dict(sequence=command['sequence'], checkpoint_id=command['checkpoint_id'], movement=command['result']['movement'])
+            kind = command['command'].replace('_turn', '')
+            segment = dict(sequence=command['sequence'], checkpoint_id=command['checkpoint_id'], movement=command['result']['movement'],
+                motion_kind=kind, turn_degrees=90 if kind in ('left', 'right') else None)
             if command['checkpoint_id'] and command['sensor_captured_at']:
                 readings = command['samples'].get(command['sensor_captured_at'])
                 if readings is None:

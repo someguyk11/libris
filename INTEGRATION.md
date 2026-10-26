@@ -9,10 +9,12 @@ In `libris/backend`:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:DATABASE_URL = 'sqlite:///libris.db' # Explicit LOCAL selection only.
+.\.venv\Scripts\python.exe book_migrate.py --check # Existing catalogue prerequisite.
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-Atlas V1 production storage is Supabase/PostgreSQL. Configure the real server-only `DATABASE_URL` in `backend/.env` (the example contains placeholders). The existing `backend/libris.db` SQLite fallback is retained for local development/tests. No original LiBot secrets were copied or accessed. Guidance adds a nullable shelf destination checkpoint and a separate task table; books and finalized Atlas tables are preserved. The Atlas upgrade replaces only empty legacy Atlas tables, never inventing encoder measurements. PostgreSQL SQL is prepared but **not applied remotely** here. See [Atlas database](backend/ATLAS_DATABASE.md), [guidance](backend/GUIDANCE.md) and [schema gaps](backend/SCHEMA_GAPS.md).
+Atlas V1 production storage is Supabase/PostgreSQL. Configure the real server-only `DATABASE_URL` in `backend/.env` or the server environment (the example contains placeholders). SQLite remains available only through explicit selection for local development/tests; missing configuration fails closed. For an existing catalogue, follow the [Phase 1 database guide](docs/PHASE1_DATABASE.md); startup rejects a missing bibliography column instead of silently relying on `create_all`. Do not run development startup against production: existing startup migrations and runtime recovery still write to compatible databases. No original LiBot secrets were copied or accessed. Guidance adds a nullable shelf destination checkpoint and a separate task table; books and finalized Atlas tables are preserved. The Atlas upgrade replaces only empty legacy Atlas tables, never inventing encoder measurements. PostgreSQL SQL is prepared but **not applied remotely** here. See [Atlas database](backend/ATLAS_DATABASE.md), [guidance](backend/GUIDANCE.md) and [schema gaps](backend/SCHEMA_GAPS.md).
 
 In a second terminal, in `libris`:
 
@@ -30,7 +32,7 @@ Open `/#/admin/shelves`, `/#/admin/books`, and `/#/admin/atlas`. API errors are 
 | Feature | Backend | Libris interface |
 | --- | --- | --- |
 | Shelf registration/list/edit/delete | `POST/GET /shelves/`, `GET/PUT/DELETE /shelves/{id}` | Existing Register Shelf page, now with editing and confirmed deletion. Assigned shelves cannot be deleted. |
-| Book registration/search | `POST /book/register`, `GET /book/search/{query}` | Existing catalogue loads the full database using the `%` wildcard; its search/filter/sort/pagination/export remain client-side. |
+| Book registration/search | `POST /book/register`, `GET /book/search/{query}`, `GET /book/{id}` | Search is ordered and bounded (`limit` 1–100, default 50; `offset` 0–100000). `%` explicitly lists books; other SQL wildcard characters are literal. Reader/admin controls load more explicitly. Admin filtering/sorting/export apply only to loaded records, as labelled. Detail URLs retain database IDs across reload. |
 | Book shelf reassignment | Existing-ISBN registration | Catalogue editor makes existing title/author/ISBN/publication fields read-only. LiBot only updates shelf assignments for an existing ISBN. |
 | Persistent Atlas registrations | `GET/POST /robots/`, `PATCH /robots/{id}` | Overview and settings store robot names and stable firmware IDs in the database. Previous browser records have an explicit import action. |
 | Encoder routes | `GET/POST /robots/{id}/routes`, `GET/PUT/PATCH/DELETE /routes/{id}` | V1 JSON encoder segments and checkpoint endpoints; retrieval, measured JSON draft import, rename, delete. Timed drafts are no longer submitted by API mode. |
@@ -42,7 +44,7 @@ Open `/#/admin/shelves`, `/#/admin/books`, and `/#/admin/atlas`. API errors are 
 | Factory reset | `POST /robot/{id}/reset` | Confirmed reset action in Atlas settings. Success means queued, **not completed**. |
 | Firmware polling/results | `GET /robot/{id}/command`, `POST /robot/{id}/telemetry`, `/command/result`, `/sensors` | Legacy envelope retained, internal command/recording IDs and execution acknowledgements added. Firmware must deduplicate before actuation; no physical firmware was available to verify. |
 | Health/OpenAPI | `/ping`, `/docs` | Server diagnostics. |
-| Email/password + OTP + sessions | `/auth/*`; see [AUTH.md](backend/AUTH.md) | Existing auth page now supports signup, numeric OTP/resend, login and logout in API mode. Recovery/logout-all backend exists; dedicated recovery UI is future work. Requires Supabase Auth and production custom SMTP. |
+| Email/password + OTP + sessions | `/auth/*`; see [AUTH.md](backend/AUTH.md) | Signup, numeric OTP/resend, login, actual logout, session identity and email-code password recovery. Protected routes bootstrap the session; admin requires the server UUID allowlist. Requires Supabase Auth and production custom SMTP; no Google/OAuth implementation. |
 | Reader catalogue and guidance | `/book/search/{query}`, `/guidance-requests` | Discover searches actual backend books; book details offer explicit guidance and owned task status/cancellation. Search alone never dispatches Atlas. |
 | Shelf destination and task monitor | `/shelves/{id}/destination`, `/robots/{id}/guidance-tasks`, `/checkpoint-confirmation`, `/guidance/stop` | Existing shelf editor maps a checkpoint; Atlas Monitor provides physical start/arrival confirmation, task state and emergency stop. |
 | Atlas OTP and return protocol v2 | `/guidance-requests/{id}/verify`, `/robot/{id}/guidance/command`, `/guidance/result`, `/guidance/arrival` | Device-only six-digit display code (60 seconds, five attempts), owned atomic authorization, FIFO queue, acknowledged outbound/return replay, physical checkpoint attestation and contextual ESP32 arrival. Compatible firmware and physical validation remain required. No checkout verification. |
@@ -51,7 +53,7 @@ Shelf IDs are database-generated integers. LiBot has no shelf category/aisle/row
 
 Only finalized robot metadata, checkpoints, and completed JSON encoder routes are persisted in `robots`, `checkpoints`, and `routes`. No `route_steps` table remains. Pending commands, execution buffers, live telemetry, credentials/reset flags, and intermediate samples are temporary; use **one Uvicorn worker**. Restart loses unsaved recordings and never implies current-location confirmation. Browser-only robot names/IDs may be explicitly imported; demo simulations are not uploaded.
 
-The scene remains illustrative, not live pose/obstacle mapping. Recording and acknowledged replay APIs require compatible firmware and physical safety testing. Guidance uses exact active outbound and separately recorded return routes, not a navigation algorithm. Only confirmed home/stopped Atlas issues its display code; physical checkpoint attestation plus contextual ESP32 arrival gates the return and final home completion. Multi-library tenancy, fleet scheduling, battery diagnostics, circulation, archiving, bulk import and book metadata updates remain absent. Other reader sections remain demos; preferences remain browser-local. See [AUTH.md](backend/AUTH.md) and [GUIDANCE.md](backend/GUIDANCE.md). No live Supabase/SMTP configuration or remote migration was performed.
+The scene remains illustrative, not live pose/obstacle mapping. Recording and acknowledged replay APIs require compatible firmware and physical safety testing. Guidance uses exact active outbound and separately recorded return routes, not a navigation algorithm. Only confirmed home/stopped Atlas issues its display code; physical checkpoint attestation plus contextual ESP32 arrival gates the return and final home completion. Multi-library tenancy, fleet scheduling, battery diagnostics, circulation and archiving remain absent. ISBN metadata review and bulk registration are implemented separately (see `docs/ISBN_REGISTRATION.md`). In API mode, Explore uses the actual catalogue, account identity comes from the session, and unsupported personal-library/reading-room features explicitly report that limitation instead of displaying fixture records. Preferences remain browser-local. See [AUTH.md](backend/AUTH.md) and [GUIDANCE.md](backend/GUIDANCE.md). No live Supabase/SMTP configuration or remote migration was performed.
 
 Demo mode retains the existing simulated driving, recording, saved-route management, member/loan management, and seeded data, isolated from backend mode.
 
@@ -71,10 +73,10 @@ Demo mode retains the existing simulated driving, recording, saved-route managem
 npm run check
 
 # libris/backend (isolated in-memory DB; never uses configured production data)
- .\.venv\Scripts\python.exe -m unittest -v test_guidance test_auth test_api
+ .\.venv\Scripts\python.exe -m unittest discover -v
 ```
 
-The 26 JavaScript tests and 83 Python tests (28 Atlas/catalogue, 21 auth, 31 guidance, three real cookie/CSRF guidance-boundary tests) cover existing behavior plus request-bound Atlas codes, expiry/attempts, concurrent consumption, FIFO, confirmed return gating, exact routes/replay, stops/timeouts and migration. Providers/devices are mocked. PostgreSQL native types are DDL-compiled; live Supabase, SMTP and physical firmware tests require configured providers/hardware.
+Run the commands above for current counts. Coverage includes strict API/session responses, cancellation versus timeouts, no mutation retries, authoritative identity/logout, bounded literal catalogue search and stable detail IDs, auth/cookie/CSRF boundaries, request-bound Atlas codes, expiry/attempts, concurrent consumption, FIFO, confirmed return gating, exact routes/replay, stops/timeouts and migration. Recording fixtures acknowledge `started` before measured completion, matching the protocol rather than bypassing it. Providers/devices are mocked. PostgreSQL native types are DDL-compiled; live Supabase, SMTP and physical firmware tests require configured providers/hardware.
 
 The V1 headless Edge smoke test passed temporary recording/save/retry, buffer clearing, text robot IDs, saved encoder-route inspection/import, reload persistence, and 390px layout checks against a separate temporary SQLite server with simulated firmware results. It is not a physical recording test.
 

@@ -6,18 +6,18 @@
           <header>
             <button class="profile-brand" @click="activeNav = 'explore'">Libris</button>
             <div>
-              <button aria-label="Notifications" @click="showToast('You are all caught up.')"><span class="material-symbols-rounded">notifications</span></button>
+              <button aria-label="Notifications" @click="showToast('Notifications are not connected yet.')"><span class="material-symbols-rounded">notifications</span></button>
               <button aria-label="Open settings" @click="openSettings"><span class="material-symbols-rounded">settings</span></button>
             </div>
           </header>
         </div>
 
         <div class="profile-identity">
-          <div class="profile-initial">R</div>
+          <div class="profile-initial">{{ apiMode ? account.user.value?.email?.[0]?.toUpperCase() : 'R' }}</div>
           <template v-if="!editing">
-            <h1>{{ user.name }}</h1>
-            <p>@{{ user.username }}</p>
-            <button @click="editing = true">Edit Profile <span class="material-symbols-rounded">edit</span></button>
+            <h1>{{ apiMode ? 'Your account' : user.name }}</h1>
+            <p>{{ apiMode ? account.user.value?.email : '@' + user.username }}</p>
+            <button v-if="!apiMode" @click="editing = true">Edit demo profile <span class="material-symbols-rounded">edit</span></button>
           </template>
           <form v-else class="profile-edit" @submit.prevent="saveProfile">
             <input v-model="draftName" aria-label="Name" />
@@ -27,7 +27,7 @@
         </div>
 
         <div class="profile-content">
-          <section class="profile-section">
+          <section v-if="!apiMode" class="profile-section">
             <p class="section-label">READING OVERVIEW</p>
             <div class="profile-stats">
               <article v-for="stat in stats" :key="stat.label">
@@ -46,7 +46,7 @@
             </div>
           </section>
 
-          <section class="profile-section">
+          <section v-if="!apiMode" class="profile-section">
             <p class="section-label">YOUR READING WORLD</p>
             <div class="reading-world">
               <article>
@@ -64,7 +64,7 @@
             </div>
           </section>
 
-          <section class="profile-section">
+          <section v-if="!apiMode" class="profile-section">
             <p class="section-label">READING GOAL</p>
             <button class="goal-card" @click="showToast('Reading goal editor coming next.')">
               <div class="goal-ring"><span>56%</span></div>
@@ -100,7 +100,7 @@
           <section v-for="group in settingsGroups" :key="group.label" class="settings-group">
             <p>{{ group.label }}</p>
             <div>
-              <button v-for="item in group.items" :key="item.title" :aria-pressed="item.title === 'Animations' ? animationsEnabled : undefined" @click="item.title === 'Animations' ? setAnimationsEnabled(!animationsEnabled) : showToast(item.title)">
+               <button v-for="item in group.items" :key="item.title" :aria-pressed="item.title === 'Animations' ? animationsEnabled : undefined" @click="item.title === 'Animations' ? setAnimationsEnabled(!animationsEnabled) : showToast(item.title + ' is not connected yet.')">
                 <span class="settings-icon material-symbols-rounded">{{ item.icon }}</span>
                 <span><strong>{{ item.title }}</strong><small>{{ item.description }}</small></span>
                 <i class="material-symbols-rounded">{{ item.title === 'Animations' ? (animationsEnabled ? 'toggle_on' : 'toggle_off') : 'chevron_right' }}</i>
@@ -118,7 +118,9 @@
 </template>
 
 <script setup>
-import { reactive, ref, nextTick, onMounted, onUnmounted } from "vue"
+import { computed, reactive, ref, nextTick, onMounted, onUnmounted } from "vue"
+import { apiMode } from '@/services/api.js'
+import { useSession } from '@/composables/useSession.js'
 import { gsap } from "@/animations/setup"
 import { useNav } from "@/composables/useNav"
 import useReducedMotion, { animationsEnabled, setAnimationsEnabled } from "@/composables/useReducedMotion"
@@ -126,6 +128,7 @@ import BottomNav from "@/components/navigation/BottomNav.vue"
 import libraryArt from "@/assets/library.png"
 
 const { current: activeNav } = useNav()
+const account = useSession()
 const isReducedMotion = useReducedMotion()
 const root = ref(null)
 const settingsOpen = ref(false)
@@ -142,13 +145,13 @@ const stats = [
 ]
 const monthBars = [22, 46, 66, 38, 64, 88]
 const monthLabels = ["J", "F", "M", "A", "M", "J"]
-const activities = [
+const activities = computed(() => [
   { icon: "history", label: "Recently Read" },
   { icon: "inventory_2", label: "Borrow History" },
   { icon: "library_books", label: "My Collections" },
   { icon: "bookmark", label: "Saved Books" },
   { icon: "admin_panel_settings", label: "Library administration", route: "admin-dashboard" }
-]
+].filter(item => !apiMode || (item.route ? account.isStaff.value : false)))
 const settingsGroups = [
   {
     label: "PREFERENCES",
@@ -193,7 +196,7 @@ function saveProfile() {
   user.name = draftName.value.trim()
   user.username = draftUsername.value.trim().replace(/^@/, "")
   editing.value = false
-  showToast("Profile updated")
+  showToast("Demo profile updated for this visit")
 }
 async function animateState(selector) {
   if (isReducedMotion.value) return
@@ -203,7 +206,10 @@ async function animateState(selector) {
 }
 function openSettings() { settingsOpen.value = true; animateState(".settings-content") }
 function closeSettings() { settingsOpen.value = false; animateState(".profile-content") }
-function signOut() { activeNav.value = "auth" }
+async function signOut() {
+  try { if (apiMode) await account.signOut(); activeNav.value = 'auth' }
+  catch (cause) { showToast(cause.message) }
+}
 
 onMounted(() => {
   if (isReducedMotion.value) return

@@ -207,7 +207,8 @@ class ReplayResult(StrictModel):
     route_id: UUID
     command_id: UUID
     sequence: int = Field(strict=True, gt=0)
-    status: str = Field(pattern='^(accepted|started|completed|failed)$')
+    status: str = Field(pattern='^(accepted|started|completed|failed|paused|resumed)$')
+    control_request_id: UUID | None = None
     movement: Movement | None = None
     error: str | None = Field(default=None, max_length=300)
 
@@ -224,6 +225,44 @@ class ArrivalReport(StrictModel):
     checkpoint_id: UUID
     stopped: bool
     confirmation_method: str = Field(pattern='^operator_attestation$')
+
+class ReplayControl(StrictModel):
+    task_id: UUID
+    session_id: UUID
+    route_id: UUID
+    command_id: UUID
+    sequence: int = Field(strict=True, gt=0)
+    request_id: UUID
+    action: str = Field(pattern='^(pause|resume)$')
+
+@router.post('/robots/{robot_id}/guidance-control')
+def replay_control(robot_id: str, body: ReplayControl, context=Depends(staff), db=Depends(get_db)):
+    with runtime.lock:
+        sweep(db)
+        task = active(db, robot_id)
+        route = current_route(db, task) if task else None
+        delivery = deliveries.get(task.id) if task else None
+        if (not task or not route or not delivery or delivery.get('protocol') != 3 or
+            str(body.task_id) != task.id or str(body.session_id) != task.session_id or
+            str(body.route_id) != route.id or task.progress_index >= len(route.route_segments) or
+            body.sequence != route.route_segments[task.progress_index]['sequence'] or
+            str(body.command_id) != command_id(task, route, body.sequence)):
+            raise HTTPException(409, 'No matching live protocol 3 segment.')
+        identifier = str(body.request_id)
+        controls = delivery.setdefault('controls', {})
+        if identifier in controls:
+            if controls[identifier]['action'] != body.action:
+                raise HTTPException(409, 'Conflicting control UUID.')
+            return controls[identifier]
+        if delivery.get('control') or len(controls) >= 32:
+            raise HTTPException(409, 'Control pending or control limit reached.')
+        expected = 'paused' if body.action == 'resume' else 'started'
+        if delivery['status'] != expected:
+            raise HTTPException(409, 'Pause requires running; resume requires acknowledged pause.')
+        control = dict(request_id=identifier, action=body.action, acknowledged=False)
+        controls[identifier] = control
+        delivery['control'] = control
+        return control
 
 @router.patch('/shelves/{shelf_id}/destination')
 def map_shelf(shelf_id: int, body: ShelfDestination, context=Depends(staff), db=Depends(get_db)):
@@ -410,8 +449,8 @@ def configure_home(robot_id: str, body: HomeConfiguration, context=Depends(staff
 @router.get('/robot/{robot_id}/guidance/command', dependencies=[Depends(device)])
 def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db)):
     available()
-    if protocol != 2:
-        raise HTTPException(409, 'Atlas OTP/return replay protocol v2 required.')
+    if protocol not in (2, 3):
+        raise HTTPException(409, 'Atlas replay protocol 2 or 3 required.')
     with runtime.lock:
         # Check old heartbeat BEFORE accepting this one: no auto-resume after loss.
         sweep(db)
@@ -432,7 +471,8 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
             db.commit()
         select_next(db, robot)
         task = active(db, robot_id)
-        stop_message = {'command': 'stop', 'execute': True, 'protocol': 2, 'clear_otp': True, 'robot_state': robot.guidance_state}
+        stop_message = {'command': 'stop' if protocol == 2 else 'idle', 'execute': protocol == 2,
+            'protocol': protocol, 'clear_otp': True, 'robot_state': robot.guidance_state}
         if not task:
             if not stopped:
                 state['checkpoint_location_verified'] = False
@@ -442,7 +482,7 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
             if not display:
                 fail(db, task, 'OTP display state was lost.', 'expired', preserve_home=True)
                 return stop_message
-            return dict(protocol=2, command='display_otp', execute=False, request_id=task.id,
+            return dict(protocol=protocol, command='display_otp', execute=False, request_id=task.id,
                 command_id=str(uuid5(UUID(task.id), str(task.otp_expires_at))), atlas_otp=display,
                 otp_expires_at=stamp(task.otp_expires_at).isoformat(), robot_state='awaiting_otp', stop=True)
         if not task.session_id or not task.verified_at:
@@ -450,6 +490,9 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
             return stop_message
         route = check_task(db, task)
         if not route:
+            return stop_message
+        if protocol == 3 and any(s.get('motion_kind') is None for s in route.route_segments):
+            fail(db, task, 'Protocol 3 requires typed measured routes; re-record legacy routes.')
             return stop_message
         if task.progress_index >= len(route.route_segments):
             evidence = arrivals.get(task.id)
@@ -463,18 +506,26 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
             if not stopped:
                 fail(db, task, 'Robot was not stopped before segment dispatch.')
                 return stop_message
-            delivery = dict(issued_at=time.time(), status='offered')
+            delivery = dict(issued_at=time.time(), status='offered', protocol=protocol)
             deliveries[task.id] = delivery
             if task.status != 'returning_home':
                 task.status = 'awaiting_robot' if task.progress_index == 0 else 'running'
             task.updated_at = now()
             state['checkpoint_location_verified'] = False
             db.commit()
-        return dict(protocol=2, command='replay_segment', clear_otp=True, task_id=task.id, session_id=task.session_id,
+        if delivery.get('protocol', 2) != protocol:
+            fail(db, task, 'Replay protocol changed during a segment.')
+            return stop_message
+        if delivery['status'] == 'paused' and not stopped:
+            fail(db, task, 'Firmware reports motion after acknowledged pause.')
+            return stop_message
+        return dict(protocol=protocol, command='replay_segment', clear_otp=True, task_id=task.id, session_id=task.session_id,
             phase='return' if task.status == 'returning_home' else 'guidance', route_id=route.id,
             command_id=command_id(task, route, segment['sequence']), sequence=segment['sequence'],
             movement=segment['movement'], execute=delivery['status'] == 'offered',
-            lease_ms=int(LEASE_SECONDS * 1000), segment_timeout_ms=SEGMENT_TIMEOUT * 1000)
+            lease_ms=int(LEASE_SECONDS * 1000), segment_timeout_ms=SEGMENT_TIMEOUT * 1000) | (
+                dict(motion_kind=segment['motion_kind'], turn_degrees=segment.get('turn_degrees'),
+                     execution_status=delivery['status'], control=delivery.get('control')) if protocol == 3 else {})
 
 @router.post('/robot/{robot_id}/guidance/result', dependencies=[Depends(device)])
 def replay_result(robot_id: str, body: ReplayResult, db=Depends(get_db)):
@@ -510,9 +561,29 @@ def replay_result(robot_id: str, body: ReplayResult, db=Depends(get_db)):
         if not delivery or not segment or body.sequence != segment['sequence']:
             fail(db, task, 'Out-of-order replay acknowledgement.')
             raise HTTPException(409, 'Unexpected segment acknowledgement. Stop requested.')
+        if body.status in ('paused', 'resumed'):
+            identifier = str(body.control_request_id)
+            control = delivery.get('controls', {}).get(identifier)
+            action = 'pause' if body.status == 'paused' else 'resume'
+            if not control or control['action'] != action or delivery.get('protocol') != 3:
+                fail(db, task, 'Unexpected pause/resume acknowledgement.')
+                raise HTTPException(409, 'Control identity mismatch. Stop requested.')
+            if not control['acknowledged']:
+                if delivery.get('control') is not control or (action == 'pause' and not runtime.state(robot_id).get('guidance_stopped')):
+                    fail(db, task, 'Pause/resume state contradiction.')
+                    raise HTTPException(409, 'Control state contradiction. Stop requested.')
+                control['acknowledged'] = True
+                delivery['status'] = 'paused' if action == 'pause' else 'started'
+                delivery['control'] = None
+            return {'acknowledged': True, 'control_request_id': identifier, 'status': body.status}
+        if body.control_request_id is not None:
+            raise HTTPException(422, 'Control UUID is only valid for pause/resume results.')
         if body.status == 'failed':
             fail(db, task, 'Robot reported an obstacle, fault or execution failure.')
         elif body.status in ('accepted', 'started'):
+            if delivery['status'] == 'paused' or delivery.get('control'):
+                # Retransmitted start receipts cannot undo an acknowledged pause.
+                return {'acknowledged': True}
             if delivery['status'] != 'started':
                 delivery['status'] = body.status
             if task.status != 'returning_home':

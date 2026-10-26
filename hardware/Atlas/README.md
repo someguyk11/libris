@@ -64,7 +64,14 @@ it never drives PWM or clears safety faults directly.
   activity. A committed route survives cancellation/failure and can be replayed
   only after the operator restores a safe start pose and clears faults.
 - `resetSafety(nowMs)` delegates to Layer 1's explicit reset. It never resumes.
+  Before resetting, navigation captures an unprocessed endpoint or failure so
+  clearing Layer 1's terminal motion state cannot lose it. A surviving activity
+  is paused and needs a **new** explicit resume request; queued requests are
+  cleared. Reset does not restart route, segment or obstacle deadlines.
   Emergency stop remains `safety.emergencyStop()` and always takes precedence.
+
+Route failure state/error remain available after cancellation and safety reset
+for diagnosis. Starting a new replay or recording clears the previous diagnostic.
 
 Robot states are `IDLE`, `MANUAL`, `RECORDING`, `REPLAYING`, `PAUSED`, `COMPLETED`
 and `FAULT`. Invalid/unsafe commands are rejected without starting motors.
@@ -112,6 +119,38 @@ All settings are centralized in `src/AtlasConfig.h`:
 `navigationTuningError()` rejects inconsistent limits. Timeouts bound operations,
 not movement distances; the unchanged Layer 1 movement/stall/control deadlines
 also apply. Sensor thresholds/hysteresis are shared with Layer 1, not duplicated.
+
+### Software-only regression tests
+
+From this directory, run with Python 3 and an existing C++17 host compiler:
+
+```sh
+python tests/host/run.py --cxx clang++
+# g++ is also supported; for Zig, pass the path to the zig executable.
+```
+
+The runner installs nothing and never connects to hardware. It compiles the real
+`Navigation`, `Routes`, `CheckpointManager` and `ObstacleAvoidance` sources with
+their real headers, using deterministic fake motion, sensors, safety and time.
+In a disposable source copy only, physical calibration predicates are simulated
+as valid and the optional private provisioning include is removed. Production
+configuration and all software limits remain unchanged; no secrets are read.
+
+Coverage includes forward/backward/turn recording and replay, measured endpoints,
+fresh checkpoint evidence and retries, capacity/invalid input, pause/coasting,
+cancellation, obstacle clearance/acknowledgement/limits, reset ordering and stale
+resume requests, bounded start/segment/session failures, recovery and clock wrap.
+`--source-dir PATH` optionally runs the same suite against a source snapshot.
+These are Layer 2 tests, not validation of the real motor/sensor/safety drivers.
+
+Build the ESP32 firmware separately, without uploading:
+
+```sh
+pio run -e esp32dev
+```
+
+Neither host tests nor a successful firmware build establish physical safety,
+calibration, stopping distance, sensor reliability or localization accuracy.
 
 ## Required configuration — no assumed wiring or calibration
 

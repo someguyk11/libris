@@ -173,7 +173,7 @@ void NetworkManager::update(uint32_t nowMs) {
             retryAtMs_ = nowMs + backoffMs_;
             backoffMs_ = min(backoffMs_ * 2, AtlasConfig::WifiRetryMaximumMs);
         }
-        if (!attempting_ && !autoConnectHeld_ && static_cast<int32_t>(nowMs - retryAtMs_) >= 0) {
+        if (autoReconnect_ && !attempting_ && !autoConnectHeld_ && static_cast<int32_t>(nowMs - retryAtMs_) >= 0) {
             bool found = false;
             for (uint8_t i = 0; i < AtlasConfig::WifiProfileCount; ++i) {
                 Profile p{};
@@ -185,6 +185,21 @@ void NetworkManager::update(uint32_t nowMs) {
     }
     wasConnected_ = up;
     if (apActive_) { dns_.processNextRequest(); portal(nowMs); }
+}
+
+void NetworkManager::reconnect() {
+    WiFi.disconnect(false, false); // preserve saved credentials.
+    linkUp_.store(false);
+    generation_.fetch_add(1);
+    attempting_ = false;
+    autoConnectHeld_ = false;
+    retryAtMs_ = millis();
+    backoffMs_ = AtlasConfig::WifiRetryInitialMs;
+    // Explicit reconnect makes one attempt even when automatic retries are disabled.
+    for (uint8_t i = 0; i < AtlasConfig::WifiProfileCount; ++i) {
+        Profile profile{};
+        if (load(i, profile)) { startAttempt(profile, millis()); break; }
+    }
 }
 
 void NetworkManager::closeClient() { client_.stop(); requestLength_ = 0; }

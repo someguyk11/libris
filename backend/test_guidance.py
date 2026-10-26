@@ -119,6 +119,26 @@ class GuidanceTests(unittest.TestCase):
         self.assertEqual(self.arrival(task, self.start, self.return_id).json()['robot_state'], 'at_home')
         self.assertEqual(self.client.get('/guidance-requests/' + task['id']).json()['status'], 'completed')
 
+    def test_recovery_interrupts_guidance_and_requires_device_ack(self):
+        boot = 'a' * 32
+        headers = {'x-atlas-key': 'x' * 40}
+        self.assertEqual(self.client.get('/robot/robot1/command', params={'boot_id': boot}, headers=headers).status_code, 200)
+        self.confirm(self.start)
+        task = self.request()
+        wire = self.poll().json()
+        self.assertEqual(self.ack(wire, 'started').status_code, 200)
+        body = {'request_id': str(uuid4()), 'action': 'restart'}
+        response = self.client.post('/robot/robot1/recovery', json=body)
+        self.assertEqual(response.status_code, 202, response.text)
+        self.assertEqual(self.client.get('/guidance-requests/' + task['id']).json()['status'], 'failed')
+        self.assertEqual(self.poll().json()['command'], 'stop')
+        self.assertFalse(runtime.state('robot1')['checkpoint_location_verified'])
+        ack = {'request_id': body['request_id'], 'boot_id': boot}
+        self.assertEqual(self.client.post('/robot/robot1/recovery/ack', json=ack).status_code, 401)
+        self.assertEqual(self.client.post('/robot/robot1/recovery/ack', json=ack, headers=headers).status_code, 200)
+        with patch('guidance_access.staff_ids', return_value=set()):
+            self.assertEqual(self.client.post('/robot/robot1/recovery', json=body, headers=headers).status_code, 403)
+
     def test_poll_redelivery_and_duplicate_results_do_not_advance_twice(self):
         task = self.request()
         wire = self.poll().json()

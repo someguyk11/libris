@@ -20,7 +20,7 @@ from auth_config import get_config
 from auth_migrate import upgrade_auth
 from auth_models import AuthBase, AuthAccount, AuthSession, AuthRateLimit, AuthEvent, now
 from auth_provider import SupabaseAuth, ProviderError
-from auth_security import set_cookie, digest
+from auth_security import set_cookie, clear_cookie, digest
 
 ORIGIN = {'Origin': 'http://localhost:5173'}
 EMAIL = 'reader@example.com'
@@ -79,7 +79,7 @@ class FakeSupabase:
 class AuthTests(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, {
-            'AUTH_ENABLED': 'true', 'AUTH_ENV': 'development', 'AUTH_COOKIE_SECURE': 'false',
+            'AUTH_ENABLED': 'true', 'AUTH_ENV': 'development', 'AUTH_COOKIE_SECURE': 'false', 'AUTH_COOKIE_SAMESITE': 'lax',
             'SUPABASE_URL': 'https://test-project.supabase.co', 'SUPABASE_PUBLISHABLE_KEY': 'sb_publishable_test',
             'AUTH_SESSION_ENCRYPTION_KEY': Fernet.generate_key().decode(), 'AUTH_SECURITY_SECRET': 'test-secret-' * 5,
             'CORS_ORIGINS': 'http://localhost:5173,http://127.0.0.1:5173',
@@ -117,6 +117,14 @@ class AuthTests(unittest.TestCase):
             self.assertIsNone(db.scalar(select(AuthAccount)))
             self.assertIsNone(db.scalar(select(AuthSession)))
         self.assertEqual(self.post('/login', {'email': EMAIL, 'password': PASSWORD}).status_code, 401)
+
+    def test_staff_indicator_comes_from_server_uuid_allowlist(self):
+        with patch.dict(os.environ, {'AUTH_STAFF_USER_IDS': ''}):
+            self.assertFalse(self.verify().json()['user']['is_staff'])
+        with patch.dict(os.environ, {'AUTH_STAFF_USER_IDS': self.fake.id}):
+            self.assertTrue(self.client.get('/auth/session').json()['user']['is_staff'])
+        with patch.dict(os.environ, {'AUTH_STAFF_USER_IDS': ''}):
+            self.assertFalse(self.client.get('/auth/session').json()['user']['is_staff'])
 
     def test_otp_creates_only_verified_reader_and_hides_credentials(self):
         response = self.verify()
@@ -306,6 +314,26 @@ class AuthTests(unittest.TestCase):
         get_config.cache_clear()
         self.assertEqual(self.client.get('/auth/me').status_code, 503)
         self.assertEqual(self.client.get('/ping').status_code, 200)
+
+    def test_cross_site_cookie_configuration(self):
+        os.environ.update(AUTH_ENV='production', AUTH_COOKIE_SECURE='true',
+                          AUTH_COOKIE_SAMESITE='none', CORS_ORIGINS='https://libotsystems.netlify.app')
+        get_config.cache_clear()
+        for cookie_action in (lambda response: set_cookie(response, 'random-session-cookie', 300), clear_cookie):
+            response = Response()
+            cookie_action(response)
+            header = response.headers['set-cookie']
+            for expected in ('__Host-libris_session=', 'HttpOnly', 'Secure', 'Path=/', 'SameSite=none'):
+                self.assertIn(expected, header)
+            self.assertNotIn('Domain=', header)
+        os.environ.update(AUTH_ENV='development', AUTH_COOKIE_SECURE='false')
+        get_config.cache_clear()
+        with self.assertRaisesRegex(ValueError, 'SameSite=None requires'):
+            get_config()
+        os.environ.update(AUTH_COOKIE_SECURE='true', AUTH_COOKIE_SAMESITE='invalid')
+        get_config.cache_clear()
+        with self.assertRaisesRegex(ValueError, 'AUTH_COOKIE_SAMESITE'):
+            get_config()
 
     def test_production_configuration_and_cookie_attributes(self):
         os.environ.update(AUTH_ENV='production', AUTH_COOKIE_SECURE='false')

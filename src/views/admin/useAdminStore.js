@@ -3,6 +3,7 @@ import { createAdminSeed, validateBook, validateShelf } from "./adminData.js"
 import { validateMember } from "./settingsData.js"
 import { apiMode, backend } from '../../services/api.js'
 import { bookFromApi, shelfFromApi, shelfPayload } from '../../services/backendData.js'
+import { canonicalIsbn } from '../../utils/isbn.js'
 
 const storageKey = "libris-admin-v1"
 let saved
@@ -12,6 +13,8 @@ const state = reactive(valid ? saved : createAdminSeed())
 // Live data never shares storage with the demo seed. Unimplemented areas start empty.
 if (apiMode) Object.assign(state, { books: [], shelves: [], shelfDetails: {}, members: [], events: [] })
 const loading = ref(false), apiError = ref(''), loaded = ref(false)
+const hasMoreBooks = ref(false)
+let booksOffset = 0
 // Additive metadata keeps existing catalogue shelf-code references intact.
 if (!state.shelfDetails || typeof state.shelfDetails !== "object" || Array.isArray(state.shelfDetails)) state.shelfDetails = {}
 const storageError = ref(false)
@@ -97,20 +100,41 @@ async function refresh() {
     state.shelves = details.map(shelf => shelf.code)
     state.shelfDetails = Object.fromEntries(details.map(shelf => [shelf.code, shelf]))
     state.books = books.map(bookFromApi)
+    booksOffset = books.length; hasMoreBooks.value = books.length === 50
     loaded.value = true
   } catch (error) { apiError.value = error.message }
   finally { loading.value = false }
 }
+async function loadMoreBooks() {
+  if (!apiMode || loading.value || !hasMoreBooks.value) return
+  loading.value = true; apiError.value = ''
+  try {
+    const books = await backend.books('%', { offset: booksOffset })
+    const known = new Set(state.books.map(book => book.id))
+    state.books.push(...books.map(bookFromApi).filter(book => !known.has(book.id)))
+    booksOffset += books.length; hasMoreBooks.value = books.length === 50
+  } catch (cause) { apiError.value = cause.message }
+  finally { loading.value = false }
+}
 async function saveBackendBook(input) {
   const existing = state.books.find(book => book.id === input.id)
-  const checked = validateBook({ ...input, status: 'Available' }, state.books, existing?.id)
+  const checked = validateBook({ ...input, isbn: canonicalIsbn(input.isbn), status: 'Available' }, state.books, existing?.id)
   if (!state.shelves.includes(checked.shelf)) throw new Error('Choose a registered shelf.')
   if (existing && ['title', 'author', 'isbn', 'publish_date'].some(key => (input[key] || '') !== (existing[key] || ''))) throw new Error('The backend can reassign existing ISBNs to shelves, but cannot edit their metadata.')
-  const result = bookFromApi(await backend.registerBook({ isbn: checked.isbn, title: checked.title, author: checked.author, publish_date: input.publish_date || null, shelf_id: Number(checked.shelf) }))
+  const result = bookFromApi(await backend.registerBook({ isbn: checked.isbn, title: checked.title, author: checked.author, publish_date: input.publish_date || null, bibliography: input.bibliography || null, shelf_id: Number(checked.shelf), require_new: !existing, expected_existing_id: existing?.backendId || null }))
   const index = state.books.findIndex(book => book.id === result.id)
   if (index < 0) state.books.unshift(result)
   else state.books[index] = result
   return result
+}
+function acceptRegisteredBooks(books) {
+  if (!apiMode) return
+  for (const raw of books) {
+    const result = bookFromApi(raw)
+    const index = state.books.findIndex(book => book.id === result.id)
+    if (index < 0) state.books.unshift(result)
+    else state.books[index] = result
+  }
 }
 async function saveBackendShelf(input, id = null) {
   const shelf = shelfFromApi(await backend.saveShelf(shelfPayload(input), id))
@@ -124,4 +148,4 @@ async function deleteBackendShelf(id) {
   state.shelves = state.shelves.filter(value => value !== code)
   delete state.shelfDetails[code]
 }
-export function useAdminStore() { return { state, query, catalogueStatus, editorRequest, storageError, activeBooks, loans, attention, saveBook, importBooks, archiveBook, markAvailable, addMember, saveMember, addShelf, registerShelf, apiMode, loading, loaded, apiError, refresh, saveBackendShelf, deleteBackendShelf } }
+export function useAdminStore() { return { state, query, catalogueStatus, editorRequest, storageError, activeBooks, loans, attention, saveBook, importBooks, archiveBook, markAvailable, addMember, saveMember, addShelf, registerShelf, apiMode, loading, loaded, apiError, refresh, hasMoreBooks, loadMoreBooks, saveBackendShelf, deleteBackendShelf, acceptRegisteredBooks } }

@@ -42,12 +42,16 @@ Use a supported Python 3 environment; CI uses Python 3.12. In PowerShell:
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# Explicit LOCAL choice; do not overwrite a reviewed server configuration.
+$env:DATABASE_URL = 'sqlite:///libris.db'
+# For an existing catalogue, check compatibility before starting:
+.\.venv\Scripts\python.exe book_migrate.py --check
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
 On macOS/Linux, use `.venv/bin/python` instead of `.\.venv\Scripts\python.exe`. Run backend commands from `backend/` so the module imports resolve.
 
-Without `DATABASE_URL`, the backend uses a local SQLite database at `backend/libris.db`. For server configuration, use `backend/.env.example` as a template for a private `backend/.env`; **replace the placeholders before use**. Do not blindly copy its PostgreSQL placeholder when intending to use SQLite. Startup applies local schema upgrades to the configured database: never point it at production without reviewing migrations and backing up data.
+`DATABASE_URL` is required; missing/blank configuration fails instead of silently selecting SQLite. For server configuration, use `backend/.env.example` as a template for a private `backend/.env`; **replace the placeholders before use**. Do not blindly copy its PostgreSQL placeholder when intending to use SQLite. Process environment takes precedence over that file. Existing catalogues missing `books.bibliography` fail startup before migration DDL; follow the [Phase 1 database guide](docs/PHASE1_DATABASE.md) to review and upgrade a disposable local copy. A missing SQLite file is not created by the check command; a deliberately new database can be initialized by normal startup. Other existing startup schema/runtime changes still run on compatible databases: never point development startup at production.
 
 PostgreSQL/Supabase is the production database target. Authentication, staff access, and robot device keys need explicit configuration. Disabling authentication/guidance features does **not** make protected operational endpoints public. Use one Uvicorn worker: live robot commands, recordings, and guidance coordination include in-memory state.
 
@@ -89,7 +93,7 @@ If Vite exits silently on Windows before printing its build banner, retry in Pow
 Backend tests, from `backend/`:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest -v test_guidance test_auth test_api
+.\.venv\Scripts\python.exe -m unittest discover -v
 ```
 
 These tests use isolated databases and mocked providers/devices. Passing tests do not prove live Supabase, SMTP, robot motion, or physical safety. GitHub Actions runs frontend checks and backend tests when this folder is the repository root.
@@ -116,6 +120,8 @@ Host FastAPI separately. Vite's `/api` proxy works only in development; producti
 ## Documentation
 
 - [Frontend features and demo behavior](docs/FRONTEND.md)
+- [ISBN scanning and bulk shelf registration](docs/ISBN_REGISTRATION.md)
+- [Phase 1 database compatibility and deployment verification](docs/PHASE1_DATABASE.md)
 - [Backend integration and supported API boundaries](INTEGRATION.md)
 - [Authentication and session configuration](backend/AUTH.md)
 - [Guidance protocol and prerequisites](backend/GUIDANCE.md)

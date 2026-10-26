@@ -32,6 +32,7 @@
         <p v-if="catalogueError" role="alert">{{ catalogueError }}</p>
         <ScrollRail gap=".85rem"><BookCard v-for="book in catalogue" :key="book.id" v-bind="book" :show-bookmark="false" @click="openBook(book)" /></ScrollRail>
         <p v-if="!catalogueLoading && searchQuery && !catalogue.length && !catalogueError">No registered books match your search.</p>
+        <button v-if="catalogueHasMore" class="admin-text-button" :disabled="catalogueLoading" @click="loadMoreCatalogue">{{ catalogueLoading ? 'Loading…' : 'Load more books' }}</button>
       </section>
       <div v-else class="discover-content">
         <section class="discover-section book-shelf">
@@ -157,7 +158,8 @@ const root = ref(null)
 const header = ref(null)
 const activeFilter = ref("all")
 const searchQuery = ref("")
-const catalogue = ref([]), catalogueLoading = ref(false), catalogueError = ref('')
+const catalogue = ref([]), catalogueLoading = ref(false), catalogueError = ref(''), catalogueHasMore = ref(false)
+let searchController
 let searchVersion = 0
 const featuredIndex = ref(0)
 const previewOpen = ref(false)
@@ -198,11 +200,23 @@ async function onSearch(query) {
   searchQuery.value = query
   if (!apiMode) return
   const version = ++searchVersion
+  searchController?.abort(); searchController = new AbortController()
   catalogueError.value = ''; catalogue.value = []
+  catalogueHasMore.value = false
   if (!query.trim()) { catalogueLoading.value = false; return }
   catalogueLoading.value = true
-  try { const books = await backend.books(query.trim()); if (version === searchVersion) catalogue.value = books.map(bookFromApi) }
+  try { const books = await backend.books(query.trim(), { signal: searchController.signal }); if (version === searchVersion) { catalogue.value = books.map(bookFromApi); catalogueHasMore.value = books.length === 50 } }
   catch (cause) { if (version === searchVersion) catalogueError.value = cause.message }
+  finally { if (version === searchVersion) catalogueLoading.value = false }
+}
+async function loadMoreCatalogue() {
+  if (catalogueLoading.value || !catalogueHasMore.value) return
+  const version = searchVersion
+  catalogueLoading.value = true; catalogueError.value = ''
+  try {
+    const books = await backend.books(searchQuery.value.trim(), { offset: catalogue.value.length, signal: searchController.signal })
+    if (version === searchVersion) { catalogue.value.push(...books.map(bookFromApi)); catalogueHasMore.value = books.length === 50 }
+  } catch (cause) { if (version === searchVersion) catalogueError.value = cause.message }
   finally { if (version === searchVersion) catalogueLoading.value = false }
 }
 function resetSearch() { searchQuery.value = ""; activeFilter.value = "all" }
@@ -242,7 +256,7 @@ onMounted(() => {
     gsap.fromTo(section, { y: 22, opacity: 0 }, { y: 0, opacity: 1, duration: .62, ease: "power3.out", scrollTrigger: { trigger: section, start: "top 90%", once: true } })
   )
 })
-onBeforeUnmount(() => { entrance?.kill(); sectionTweens.forEach(tween => { tween.scrollTrigger?.kill(); tween.kill() }) })
+onBeforeUnmount(() => { searchVersion++; searchController?.abort(); entrance?.kill(); sectionTweens.forEach(tween => { tween.scrollTrigger?.kill(); tween.kill() }) })
 </script>
 
 <style scoped>

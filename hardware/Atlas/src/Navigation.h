@@ -21,6 +21,7 @@ public:
     void update(uint32_t nowMs);
     bool driveDistance(float signedCentimetres);
     bool turn90(bool clockwise);
+    bool replayTicks(uint32_t left, uint32_t right, MotionController::Kind kind);
     bool beginRecording();
     bool finishRecording();
     bool replay();

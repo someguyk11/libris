@@ -45,12 +45,12 @@
             </label>
           </Transition>
 
-          <label>
+          <label v-if="recoveryPhase !== 'reset'">
             <span>Email address</span>
             <div><i class="material-symbols-rounded">mail</i><input v-model="email" :readonly="otpPhase" required type="email" autocomplete="email" placeholder="reader@example.com" /></div>
           </label>
 
-          <label v-if="!otpPhase">
+          <label v-if="!otpPhase && (!recoveryPhase || recoveryPhase === 'reset')">
             <span>Password</span>
             <div>
               <i class="material-symbols-rounded">lock</i>
@@ -64,13 +64,13 @@
           <label v-if="otpPhase"><span>Email verification code</span><div><i class="material-symbols-rounded">mark_email_read</i><input v-model="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required placeholder="Code from your email" /></div></label>
           <button v-if="otpPhase" type="button" :disabled="pending" @click="resend">Resend verification code</button>
 
-          <div v-if="mode === 'login' && !apiMode" class="auth-form__options">
-            <label class="remember"><input v-model="remember" type="checkbox" /> <span>Remember me</span></label>
-            <button type="button">Forgot password?</button>
+          <div v-if="mode === 'login' && !recoveryPhase" class="auth-form__options">
+            <span>Session expiry is managed securely.</span>
+            <button type="button" :disabled="pending" @click="startRecovery">Forgot password?</button>
           </div>
 
           <button class="auth-submit" type="submit" :disabled="pending">
-            {{ pending ? 'Please wait…' : otpPhase ? 'Verify email' : mode === 'login' ? 'Enter Libris' : 'Create account' }}
+            {{ pending ? 'Please wait…' : recoveryPhase === 'reset' ? 'Set new password' : otpPhase ? 'Verify email' : recoveryPhase ? 'Send recovery code' : mode === 'login' ? 'Enter Libris' : 'Create account' }}
             <span class="material-symbols-rounded">arrow_forward</span>
           </button>
 
@@ -96,14 +96,18 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onBeforeUnmount } from "vue"
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue"
 import { gsap } from "@/animations/setup"
 import { useNav } from "@/composables/useNav"
 import useReducedMotion from "@/composables/useReducedMotion"
 import libraryArt from "@/assets/library.png"
 import { apiMode, authApi } from '@/services/api.js'
+import { useSession } from '@/composables/useSession.js'
 
-const { current: activeNav, selectedBook } = useNav()
+const { current: activeNav, afterSignIn } = useNav()
+const account = useSession()
+const sessionEmail = computed(() => account.user.value?.email || '')
+const recoveryPhase = ref('')
 const isReducedMotion = useReducedMotion()
 const root = ref(null)
 const form = ref(null)
@@ -111,14 +115,16 @@ const mode = ref("login")
 const name = ref("")
 const email = ref("")
 const password = ref("")
-const remember = ref(false)
 const showPassword = ref(false)
 const message = ref("")
-const pending = ref(false), otpPhase = ref(false), otp = ref(''), sessionEmail = ref('')
+const pending = ref(false), otpPhase = ref(false), otp = ref('')
 let entrance = null
+watch(() => account.session.value?.purpose, purpose => {
+  if (purpose === 'recovery') { recoveryPhase.value = 'reset'; otpPhase.value = false }
+}, { immediate: true })
 
 onMounted(() => {
-  if (apiMode) authApi.session().then(session => { if (session.purpose === 'user') sessionEmail.value = session.user.email }).catch(() => {})
+  if (account.session.value?.purpose === 'recovery') recoveryPhase.value = 'reset'
   if (isReducedMotion.value) return
   entrance = gsap.timeline({ defaults: { ease: "power3.out" } })
     .fromTo(".auth-art", { opacity: 0 }, { opacity: 1, duration: .8 })
@@ -129,8 +135,8 @@ onBeforeUnmount(() => entrance?.kill())
 
 async function setMode(nextMode) {
   if (pending.value) return
-  if (mode.value === nextMode) return
   message.value = ""
+  recoveryPhase.value = ''
   otpPhase.value = false; otp.value = ''; password.value = ''
   mode.value = nextMode
   await nextTick()
@@ -143,9 +149,12 @@ async function submit() {
   if (apiMode) {
     pending.value = true; message.value = ''
     try {
-      if (otpPhase.value) { await authApi.verify(email.value, otp.value); password.value = ''; otp.value = ''; activeNav.value = selectedBook.value ? 'book' : 'discover' }
+      if (recoveryPhase.value === 'reset') { await authApi.resetPassword(password.value); account.accept(null); password.value = ''; recoveryPhase.value = ''; message.value = 'Password updated. Sign in with your new password.' }
+      else if (otpPhase.value && recoveryPhase.value) { account.accept(await authApi.verifyRecovery(email.value, otp.value)); otp.value = ''; otpPhase.value = false; recoveryPhase.value = 'reset' }
+      else if (recoveryPhase.value) { await authApi.forgotPassword(email.value); otpPhase.value = true; message.value = 'If eligible, a recovery code has been sent. Check your email.' }
+      else if (otpPhase.value) { account.accept(await authApi.verify(email.value, otp.value)); password.value = ''; otp.value = ''; afterSignIn() }
       else if (mode.value === 'signup') { await authApi.signup(email.value, password.value); password.value = ''; otpPhase.value = true; message.value = 'If eligible, a verification code has been sent. Check your email.' }
-      else { await authApi.login(email.value, password.value); password.value = ''; activeNav.value = selectedBook.value ? 'book' : 'discover' }
+      else { account.accept(await authApi.login(email.value, password.value)); password.value = ''; afterSignIn() }
     } catch (cause) { message.value = cause.message }
     finally { pending.value = false }
     return
@@ -156,15 +165,19 @@ async function submit() {
 }
 async function resend() {
   pending.value = true
-  try { await authApi.resend(email.value); message.value = 'If eligible, another verification code has been sent.' }
+  try { await (recoveryPhase.value ? authApi.forgotPassword(email.value) : authApi.resend(email.value)); message.value = 'If eligible, another verification code has been sent.' }
   catch (cause) { message.value = cause.message }
   finally { pending.value = false }
 }
 async function logout() {
   pending.value = true
-  try { await authApi.session(); await authApi.logout(); sessionEmail.value = ''; message.value = 'Signed out.' }
+  try { await account.signOut(); message.value = 'Signed out.' }
   catch (cause) { message.value = cause.message }
   finally { pending.value = false }
+}
+function startRecovery() {
+  if (!apiMode) { message.value = 'Password recovery requires a connected account, not demo mode.'; return }
+  recoveryPhase.value = 'email'; otpPhase.value = false; password.value = ''; message.value = 'Enter your account email to request a recovery code.'
 }
 </script>
 

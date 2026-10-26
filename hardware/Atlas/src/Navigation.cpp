@@ -73,6 +73,20 @@ bool Navigation::beginRecording() {
     return true;
 }
 
+bool Navigation::replayTicks(uint32_t left, uint32_t right, MotionController::Kind kind) {
+    if ((state_ != State::Idle && state_ != State::Completed) || manualStarted_ || !safety_.canMove() ||
+        !motion_.replayTicks(left, right, kind)) return false;
+    manualSegment_ = Routes::Segment{};
+    manualSegment_.kind = kind;
+    state_ = State::Manual;
+    obstacles_.reset(); checkpoints_.reset();
+    sessionAtMs_ = manualAtMs_ = millis();
+    manualStarted_ = true;
+    manualValidating_ = manualEndpoint_ = manualNeedsResume_ = false;
+    error_ = Error::None;
+    return true;
+}
+
 bool Navigation::finishRecording() {
     if (state_ != State::Recording || manualStarted_ || !routes_.finishRecording()) return false;
     state_ = State::Idle;
@@ -133,8 +147,8 @@ void Navigation::continueActivity(uint32_t nowMs) {
         if (!routes_.resume(nowMs)) { fail(Error::ResumeDenied); return; }
     } else if (manualStarted_ && manualNeedsResume_) {
         const auto p = motion_.progress();
-        if (p.leftCm > p.targetCm + CheckpointDistanceToleranceCm ||
-            p.rightCm > p.targetCm + CheckpointDistanceToleranceCm) { fail(Error::Checkpoint); return; }
+        if (p.leftCm > (p.leftTargetCm > 0 ? p.leftTargetCm : p.targetCm) + CheckpointDistanceToleranceCm ||
+            p.rightCm > (p.rightTargetCm > 0 ? p.rightTargetCm : p.targetCm) + CheckpointDistanceToleranceCm) { fail(Error::Checkpoint); return; }
         if (!motion_.resume()) { fail(Error::ResumeDenied); return; }
         manualNeedsResume_ = false;
     }
@@ -161,7 +175,29 @@ void Navigation::fail(Error error) {
 }
 
 bool Navigation::resetSafety(uint32_t nowMs) {
-    if (navigationTuningError() || !safety_.reset(nowMs)) return false;
+    if (navigationTuningError() || motion_.moving()) return false;
+    // reset() clears motion's terminal state. Observe failures and capture an
+    // endpoint BEFORE that happens, without advancing or launching an activity.
+    const auto fault = safety_.fault();
+    const bool activity = state_ == State::Manual || state_ == State::Recording ||
+        state_ == State::Replaying || state_ == State::Paused;
+    if (state_ != State::Fault) {
+        if ((safety_.latched() && fault != AtlasFault::Obstacle) ||
+            (fault != AtlasFault::None && fault != AtlasFault::Obstacle && fault != AtlasFault::Sensor) ||
+            (activity && fault == AtlasFault::Sensor)) fail(Error::Safety);
+        else if (motion_.state() == MotionController::State::Failed && fault != AtlasFault::Obstacle)
+            fail(Error::Motion);
+        else enterPause(fault == AtlasFault::Obstacle ? PauseReason::Obstacle : PauseReason::User, nowMs);
+    }
+    // A reset must not consume a previously queued resume, or enable automatic
+    // obstacle continuation. A new explicit resume is required after reset.
+    resumeRequested_ = false;
+    if (state_ == State::Paused && fault == AtlasFault::Obstacle && pauseReason_ == PauseReason::User) {
+        pauseReason_ = PauseReason::Obstacle;
+        obstacles_.begin(nowMs);
+    }
+    if (state_ == State::Paused && pauseReason_ == PauseReason::Obstacle) acknowledgementRequired_ = true;
+    if (!safety_.reset(nowMs)) return false;
     if (state_ == State::Fault) {
         cancel();
         state_ = State::Idle;

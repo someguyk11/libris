@@ -39,6 +39,7 @@
           <div><dt>Active hardware route</dt><dd>Unavailable</dd></div>
           <div><dt>Sensor readings</dt><dd>Not connected</dd></div>
         </dl></section>
+        <AtlasRecovery v-if="apiMode" :key="'recovery-' + unit.identifier" :robot-id="unit.identifier" :telemetry="unit.telemetry" :connection-error="unit.connectionError" />
         <GuidanceMonitor v-if="apiMode" :key="unit.identifier" :robot-id="unit.identifier" />
         <section v-else><div class="monitor-section-heading"><h2>Task queue</h2></div><p class="admin-muted">Demo only · No live task queue is connected.</p></section>
         <section><div class="monitor-section-heading"><h2>Connection & errors</h2></div><p class="admin-muted">{{ apiMode ? unit.connectionError || 'No backend request error. Hardware diagnostics are not exposed.' : 'Hardware diagnostics are unavailable in this frontend preview.' }}</p></section>
@@ -81,6 +82,7 @@
 </template>
 <script setup>
 import GuidanceMonitor from './components/GuidanceMonitor.vue'
+import AtlasRecovery from './components/AtlasRecovery.vue'
 import { computed, reactive, ref } from 'vue'
 import { useNav } from '@/composables/useNav.js'
 import AppButton from '@/components/common/AppButton.vue'

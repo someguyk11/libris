@@ -18,7 +18,8 @@ def state(robot_id):
     return robots.setdefault(robot_id, dict(command='stop', sequence=0, active_command_id=None,
         last_command_poll=0.0, last_seen=0.0, telemetry_at=0.0, wifi_ssid='Unknown Network',
         signal_strength=None, uptime_seconds=None, pending_reconfig=None, factory_reset_triggered=False,
-        recording_id=None, checkpoint_location_verified=False))
+        recording_id=None, checkpoint_location_verified=False, boot_id=None,
+        recovery=None, auto_reconnect=True, recovery_capable=False))
 
 def clear():
     robots.clear(); active_recordings.clear(); pending_commands.clear(); receipts.clear()

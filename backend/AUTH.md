@@ -73,8 +73,36 @@ Store both in deployment secret storage. Never publish generated output. Set:
   `CORS_ORIGINS` without paths/trailing slashes. HTTP/insecure cookie config fails
   startup. For localhost only, explicitly set `AUTH_ENV=development` and
   `AUTH_COOKIE_SECURE=false`.
-- Prefer a same-origin proxy or same-site API subdomain. The `SameSite=Lax` session
-  cookie deliberately does **not** support an unrelated cross-site API deployment.
+- Prefer a same-origin proxy or same-site API subdomain with the default
+  `AUTH_COOKIE_SAMESITE=lax`. Direct Netlify-to-Render authentication requires
+  `AUTH_COOKIE_SAMESITE=none` and `AUTH_COOKIE_SECURE=true`; Origin and CSRF checks
+  remain mandatory. Browsers blocking third-party cookies can still require a
+  same-site deployment.
+
+### Render / Netlify CORS configuration
+
+Set Render's `CORS_ORIGINS=https://libotsystems.netlify.app` (no trailing slash),
+`AUTH_COOKIE_SAMESITE=none`, `AUTH_COOKIE_SECURE=true`, and `AUTH_ENV=production`.
+Enable/configure auth with `AUTH_ENABLED=true`, the Supabase public credentials,
+`AUTH_SESSION_ENCRYPTION_KEY`, and `AUTH_SECURITY_SECRET` described above; retain
+the existing `DATABASE_URL`. Do not use wildcard origins or disable authentication.
+The backend loads `.env` without overriding Render's environment variables.
+Environment changes require a restart/redeployment. Normal application startup
+runs the existing migrations; coordinate deployment under your database policy.
+
+Verify after deployment, without touching the database:
+
+```sh
+curl -i -X OPTIONS https://libot-8okb.onrender.com/checkpoints/ -H "Origin: https://libotsystems.netlify.app" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: content-type,x-csrf-token"
+curl -i https://libot-8okb.onrender.com/ping -H "Origin: https://libotsystems.netlify.app"
+```
+
+Expect preflight 200 and exact `Access-Control-Allow-Origin` plus
+`Access-Control-Allow-Credentials: true` on both responses. Repeat preflight for
+`/book/search/%25`, `/robots/`, and `/shelves/`. An unlisted origin must not receive
+`Access-Control-Allow-Origin`. Check the real authenticated browser flow too.
+An API 401/403/503 with CORS headers is an authentication/configuration error,
+not a CORS failure; proxy-generated errors cannot be fixed by FastAPI middleware.
 
 Install `requirements.txt`, then run `python -m uvicorn main:app --host 127.0.0.1
 --port 8000`. Normal startup applies the additive auth migration transactionally
@@ -140,7 +168,8 @@ Each authenticated check queries Supabase `/user` and validates verified email,
 UUID identity and local account status; it never trusts client identity or merely
 decoded JWTs. PostgreSQL account/session row locks serialize refresh and revocation;
 SQLite has a single-process development lock. Cookies are host-only, HttpOnly,
-Secure in production, SameSite=Lax, Path=/ (`__Host-libris_session` in production).
+Secure in production, SameSite=Lax by default (configurable above), Path=/
+(`__Host-libris_session` in production).
 HTTPS, Origin validation and session-bound CSRF protect mutations/login CSRF.
 Logout clears encrypted tokens locally even when upstream revocation fails;
 `provider_revoked:false` is reported honestly. Upstream JWTs can remain valid until

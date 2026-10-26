@@ -1,7 +1,8 @@
 <template>
   <div class="admin-catalogue admin-page-enter">
-    <header class="admin-page-heading admin-catalogue-hero"><div><p class="admin-eyebrow">BOOKS</p><h1>Library Catalogue</h1><p>Manage your collection, keep track of availability,<br class="admin-desktop-break"> and give every book a place.</p></div><div class="admin-heading-actions"><button v-if="!apiMode" class="admin-button secondary" @click="openImport"><span class="material-symbols-rounded">upload_file</span>Import CSV</button><button class="admin-button" :disabled="loading" @click="openEditor()"><span class="material-symbols-rounded">add</span>Add book</button></div></header>
-    <p v-if="apiMode" class="admin-muted">Search and registration use the database. Existing ISBNs can be moved to another shelf; metadata edits, loans, availability changes, archiving, and bulk import are not supported by the backend.</p>
+    <header class="admin-page-heading admin-catalogue-hero"><div><p class="admin-eyebrow">BOOKS</p><h1>Library Catalogue</h1><p>Manage your collection, keep track of availability,<br class="admin-desktop-break"> and give every book a place.</p></div><div class="admin-heading-actions"><button v-if="apiMode" class="admin-button secondary" :disabled="loading" @click="registrationMode = 'bulk'"><span class="material-symbols-rounded">barcode_scanner</span>Scan to shelf</button><button class="admin-button" :disabled="loading" @click="openEditor()"><span class="material-symbols-rounded">add</span>{{ apiMode ? 'Add book / Scan ISBN' : 'Add book' }}</button></div></header>
+    <p v-if="apiMode" class="admin-muted">Register ISBN editions to shelves using the database. Scan individually or review a batch for one shelf. Existing editions are not extra physical copies; shelf reassignment requires confirmation. Existing metadata, loans, availability, and archiving cannot be edited here.</p>
+    <p v-if="apiMode" class="admin-muted" role="status">{{ state.books.length }} titles loaded. Filters, counts and export apply only to loaded titles. Refresh after catalogue changes.<button v-if="hasMoreBooks" class="admin-text-button" :disabled="loading" @click="loadMoreBooks">{{ loading ? 'Loading…' : 'Load next 50 titles' }}</button></p>
     <div class="admin-catalogue-body">
       <div class="admin-catalogue-main">
         <nav class="admin-book-tabs" aria-label="Catalogue status"><button :class="{ active: !archived && !selectedStatuses.length && !attentionOnly }" @click="setStatus('')">All books <small>{{ activeBooks.length }}</small></button><button v-for="status in statuses" :key="status" :class="{ active: !archived && selectedStatuses.length === 1 && selectedStatuses[0] === status }" @click="setStatus(status)">{{ status }}</button><button v-if="!apiMode" :class="{ active: archived }" @click="setArchived">Archived</button></nav>
@@ -43,7 +44,7 @@
         <div class="admin-form-actions"><AppButton type="button" variant="secondary" :disabled="saving" @click="editorOpen = false">Cancel</AppButton><AppButton type="submit" :disabled="saving || (apiMode && !draft.shelf)">{{ saving ? 'Saving…' : draft.id ? 'Save changes' : 'Add book' }}</AppButton></div>
       </form>
     </AdminDialog>
-    <AdminDialog :open="importOpen" title="Import your catalogue" @close="importOpen = false"><p class="admin-muted">Choose a CSV with title, author, and isbn columns. Optional columns: genre, shelf, status, language. All rows are checked before any books are added.</p><button class="admin-text-button" @click="downloadTemplate"><span class="material-symbols-rounded">download</span>Download CSV template</button><form class="admin-form" @submit.prevent="submitImport"><label>CSV file<input ref="importFileInput" type="file" accept=".csv,text/csv" required @change="readImport" /></label><p v-if="importRows.length" class="admin-notice">{{ importRows.length }} {{ importRows.length === 1 ? 'book' : 'books' }} ready to validate and import.</p><p v-if="importError" class="admin-form-error" role="alert">{{ importError }}</p><div class="admin-form-actions"><AppButton type="button" variant="secondary" @click="importOpen = false">Cancel</AppButton><AppButton type="submit" :disabled="!importRows.length">Import {{ importRows.length || '' }} books</AppButton></div></form></AdminDialog>
+    <BookRegistration v-if="registrationMode" :bulk="registrationMode === 'bulk'" @close="registrationMode = ''" @saved="emit('notice', $event)" />
   </div>
 </template>
 <script setup>
@@ -51,10 +52,12 @@ import { computed, ref, watch } from 'vue'
 import BookCover from '@/components/book/BookCover.vue'
 import AppButton from '@/components/common/AppButton.vue'
 import AdminDialog from './components/AdminDialog.vue'
+import BookRegistration from './components/BookRegistration.vue'
 import { useAdminStore } from './useAdminStore'
-import { parseCsv, statuses as demoStatuses, toCsv } from './adminData'
+import { statuses as demoStatuses, toCsv } from './adminData'
 const emit = defineEmits(['notice'])
-const { state, activeBooks, query, catalogueStatus, editorRequest, saveBook, archiveBook, markAvailable, importBooks, apiMode, loading } = useAdminStore()
+const { state, activeBooks, query, catalogueStatus, editorRequest, saveBook, archiveBook, markAvailable, apiMode, loading, hasMoreBooks, loadMoreBooks } = useAdminStore()
+const registrationMode = ref('')
 const statuses = apiMode ? ['Available', 'Unavailable'] : demoStatuses
 const selectedStatuses = ref([]), genre = ref(''), shelf = ref(''), language = ref(''), sort = ref('recent'), archived = ref(false), attentionOnly = ref(false), filtersOpen = ref(false), page = ref(1), selected = ref(new Set()), error = ref('')
 const pageSize = 8
@@ -63,7 +66,7 @@ const languages = computed(() => [...new Set(state.books.map(book => book.langua
 const isOverdue = due => due && new Date(due + 'T23:59:59') < new Date()
 const filtered = computed(() => {
   const search = query.value.trim().toLowerCase()
-  return state.books.filter(book => Boolean(book.archived) === archived.value && (!search || `${book.title} ${book.author} ${book.isbn} ${book.genre}`.toLowerCase().includes(search)) && (!selectedStatuses.value.length || selectedStatuses.value.includes(book.status)) && (!genre.value || book.genre === genre.value) && (!shelf.value || book.shelf === shelf.value) && (!language.value || book.language === language.value) && (!attentionOnly.value || book.status === 'Maintenance' || book.status === 'Borrowed' && isOverdue(book.due))).sort((a, b) => sort.value === 'recent' ? new Date(b.added) - new Date(a.added) : a[sort.value].localeCompare(b[sort.value]))
+  return state.books.filter(book => Boolean(book.archived) === archived.value && (!search || `${book.title} ${book.author} ${book.isbn} ${book.genre}`.toLowerCase().includes(search)) && (!selectedStatuses.value.length || selectedStatuses.value.includes(book.status)) && (!genre.value || book.genre === genre.value) && (!shelf.value || book.shelf === shelf.value) && (!language.value || book.language === language.value) && (!attentionOnly.value || book.status === 'Maintenance' || book.status === 'Borrowed' && isOverdue(book.due))).sort((a, b) => sort.value === 'recent' ? (apiMode ? b.backendId - a.backendId : new Date(b.added) - new Date(a.added)) : a[sort.value].localeCompare(b[sort.value]))
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
 const pageBooks = computed(() => filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize))
@@ -79,14 +82,9 @@ function archive(book) { try { archiveBook(book); emit('notice', book.archived ?
 function bulkAvailable() { if (apiMode) { error.value = 'Availability updates are not supported by the backend.'; return } const books = state.books.filter(book => selected.value.has(book.id)); books.forEach(markAvailable); selected.value = new Set(); emit('notice', `${books.length} books marked available`) }
 function bulkArchive() { if (apiMode) { error.value = 'Archiving is not supported by the backend.'; return } const books = state.books.filter(book => selected.value.has(book.id)); if (books.some(book => !book.archived && book.status === 'Borrowed')) { error.value = 'Return borrowed books before archiving them.'; return } books.forEach(archiveBook); selected.value = new Set(); emit('notice', archived.value ? 'Selected books restored' : 'Selected books archived') }
 const editorOpen = ref(false), draft = ref({}), formError = ref(''), saving = ref(false)
-function openEditor(book) { draft.value = book ? { ...book } : { title: '', author: '', isbn: '', genre: 'Fiction', shelf: state.shelves[0] || '', status: 'Available', language: 'English', due: '', borrowerId: '', publish_date: '' }; formError.value = ''; editorOpen.value = true }
+function openEditor(book) { if (apiMode && !book) { registrationMode.value = 'single'; return } draft.value = book ? { ...book } : { title: '', author: '', isbn: '', genre: 'Fiction', shelf: state.shelves[0] || '', status: 'Available', language: 'English', due: '', borrowerId: '', publish_date: '' }; formError.value = ''; editorOpen.value = true }
 watch(editorRequest, value => { if (value) { openEditor(); editorRequest.value = false } }, { immediate: true })
 async function submitBook() { if (saving.value) return; saving.value = true; try { const editing = Boolean(draft.value.id); await saveBook(draft.value); editorOpen.value = false; emit('notice', editing ? (apiMode ? 'Shelf assignment saved to the database' : 'Book details updated') : 'Book added to the catalogue') } catch (reason) { formError.value = reason.message } finally { saving.value = false } }
-const importOpen = ref(false), importRows = ref([]), importError = ref(''), importFileInput = ref(null)
-function openImport() { importRows.value = []; importError.value = ''; if (importFileInput.value) importFileInput.value.value = ''; importOpen.value = true }
-async function readImport(event) { importRows.value = []; importError.value = ''; try { const file = event.target.files[0]; if (!file) return; if (file.size > 2 * 1024 * 1024) throw new Error('Choose a CSV smaller than 2 MB.'); const rows = parseCsv(await file.text()); if (rows.length > 1000) throw new Error('Import up to 1,000 books at a time.'); importRows.value = rows } catch (reason) { importError.value = reason.message } }
-function submitImport() { try { const count = importBooks(importRows.value); importOpen.value = false; emit('notice', `${count} books imported`) } catch (reason) { importError.value = reason.message } }
 function download(text, name) { const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000) }
 function exportBooks() { download(toCsv(filtered.value), 'libris-catalogue.csv'); emit('notice', `${filtered.value.length} titles exported`) }
-function downloadTemplate() { download('title,author,isbn,genre,shelf,status,language\r\nA New Chapter,Example Author,9780000000002,Fiction,' + state.shelves[0] + ',Available,English', 'libris-import-template.csv') }
 </script>

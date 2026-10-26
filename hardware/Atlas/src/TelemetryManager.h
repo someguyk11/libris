@@ -19,8 +19,8 @@ public:
     bool connected() const { return network_.connected(); }
     bool backendReady() const { return healthy_.load() && !deliveryFault_.load(); }
 private:
-    struct Ack { char id[37]; BackendClient::ResultStatus status; bool ok; };
-    enum class Phase : uint8_t { Idle, AwaitingStart, Running };
+    struct Ack { char id[37]; char controlId[37]; BackendClient::ResultStatus status; bool ok; };
+    enum class Phase : uint8_t { Idle, AwaitingStart, Running, AwaitingPauseAck, Paused, AwaitingResumeAck, Resuming };
     static void taskEntry(void* context);
     void worker();
     void command(const BackendClient::Command& command, uint32_t nowMs);
@@ -43,9 +43,12 @@ private:
     BackendClient backend_;
     QueueHandle_t commands_ = nullptr, results_ = nullptr, acks_ = nullptr, samples_ = nullptr;
     std::atomic<bool> healthy_{false}, deliveryFault_{false}, activeMovement_{false};
+    std::atomic<bool> recoveryHold_{false}, recoveryApproved_{false};
+    std::atomic<bool> stoppedSnapshot_{true};
     std::atomic<uint32_t> generation_{0};
     Phase phase_ = Phase::Idle;
     BackendClient::Command active_;
+    char controlId_[37] = {};
     uint32_t lastPollMs_ = 0, lastSampleMs_ = 0, leftStart_ = 0, rightStart_ = 0;
     uint32_t highSequence_ = 0, observedGeneration_ = 0;
     char recent_[AtlasConfig::RecentCommandCapacity][37] = {};

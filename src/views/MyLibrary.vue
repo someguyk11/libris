@@ -3,25 +3,27 @@
     <div class="library-shell">
       <header class="library-header">
         <h1>My Library</h1>
-        <button aria-label="Notifications" @click="showToast('You are all caught up.')">
+        <button aria-label="Notifications" @click="showToast('Notifications are not connected yet.')">
           <span class="material-symbols-rounded">notifications</span><i></i>
         </button>
       </header>
 
       <LibraryTabs v-model="activeTab" />
+      <p role="status">{{ apiMode ? 'Personal library syncing is not available yet. No account loans or saved books are loaded.' : 'Demo library · sample loans and dates, not account records. Changes last for this visit.' }}</p>
 
       <div ref="content" class="library-content">
         <Transition name="library-panel" mode="out-in">
           <section :key="activeTab" class="library-panel">
             <div class="panel-heading">
               <h2>{{ panelTitle }} <span>{{ currentItems.length }}</span></h2>
-              <button @click="sortAscending = !sortAscending">
-                Sort: {{ sortAscending ? "Oldest" : sortLabel }}
+              <button v-if="currentItems.length" @click="sortAscending = !sortAscending">
+                Sort: {{ sortAscending ? "Title Z–A" : 'Title A–Z' }}
                 <span class="material-symbols-rounded">expand_more</span>
               </button>
             </div>
 
-            <template v-if="activeTab === 'waitlists'">
+            <EmptyState v-if="!currentItems.length" icon="local_library" :title="apiMode ? 'Library syncing not available' : 'Nothing here yet'" :description="apiMode ? 'This tab is not connected to account records. Browse the live catalogue instead.' : 'Your demo items will appear here.'"><template #action><AppButton @click="activeNav = 'discover'">Explore books</AppButton></template></EmptyState>
+            <template v-else-if="activeTab === 'waitlists'">
               <div class="library-list">
                 <article v-for="book in sortedItems" :key="book.id" class="library-row waitlist-row">
                   <BookCover :cover="book.cover" :title="book.title" :author="book.author" size="small" />
@@ -32,7 +34,7 @@
                       <small>{{ waitDate(book.waitlistPosition) }}</small>
                     </div>
                   </div>
-                  <button class="outline-action" @click="showToast('Opening ' + book.title)">View</button>
+                  <button class="outline-action" @click="openBook(book, 'library')">View</button>
                 </article>
               </div>
               <aside class="library-note">
@@ -40,7 +42,7 @@
                 <span class="hourglass material-symbols-rounded">hourglass_top</span>
               </aside>
               <section class="book-shelf">
-                <div class="book-shelf__heading"><h2>Recently completed <span>4</span></h2><button aria-label="See all"><span class="material-symbols-rounded">chevron_right</span></button></div>
+                <div class="book-shelf__heading"><h2>Sample completed books <span>4</span></h2></div>
                 <div class="book-shelf__rail">
                   <article v-for="book in savedBooks.slice(0, 4)" :key="book.id" class="returned-card">
                     <BookCover :cover="book.cover" :title="book.title" :author="book.author" size="small" />
@@ -61,11 +63,11 @@
                     </div>
                     <div class="row-progress"><i><span :style="{ width: book.progress + '%' }"></span></i><small>{{ book.progress }}%</small></div>
                   </div>
-                  <button class="more-button" aria-label="More options"><span class="material-symbols-rounded">more_vert</span></button>
+                  <button class="more-button" aria-label="View book details" @click="openBook(book, 'library')"><span class="material-symbols-rounded">chevron_right</span></button>
                 </article>
               </div>
               <section class="book-shelf">
-                <div class="book-shelf__heading"><h2>Returned recently <span>3</span></h2><button aria-label="See all"><span class="material-symbols-rounded">chevron_right</span></button></div>
+                <div class="book-shelf__heading"><h2>Sample returns <span>3</span></h2></div>
                 <div class="book-shelf__rail">
                   <article v-for="(book, index) in savedBooks.slice(0, 3)" :key="book.id" class="returned-card">
                     <BookCover :cover="book.cover" :title="book.title" :author="book.author" size="small" />
@@ -73,13 +75,13 @@
                   </article>
                 </div>
               </section>
-              <button class="fine-card" @click="showToast('No outstanding fees.')">
+              <button class="fine-card" @click="showToast('Fees are not connected to account records.')">
                 <span class="material-symbols-rounded">account_balance_wallet</span>
-                <span><strong>Fines & fees</strong><small>You’re all good! No fines at the moment.</small></span>
+                <span><strong>Fines & fees</strong><small>Account fees are not connected.</small></span>
                 <i class="material-symbols-rounded">chevron_right</i>
               </button>
               <aside class="review-card">
-                <div><h3>Love the library?</h3><p>Support it by leaving a review.</p><button @click="showToast('Thanks for supporting Libris.')">Leave a review</button></div>
+                <div><h3>Love the library?</h3><p>Reviews are not connected yet.</p></div>
                 <span class="material-symbols-rounded">favorite</span>
               </aside>
             </template>
@@ -93,7 +95,7 @@
                     <div class="row-progress"><i><span :style="{ width: book.progress + '%' }"></span></i><small>{{ book.progress }}%</small></div>
                     <small class="last-read">{{ lastRead(book.id) }}</small>
                   </div>
-                  <button class="round-action" aria-label="Continue reading" @click="showToast('Continuing ' + book.title)"><span class="material-symbols-rounded">chevron_right</span></button>
+                  <button class="round-action" aria-label="View book details" @click="openBook(book, 'library')"><span class="material-symbols-rounded">chevron_right</span></button>
                 </article>
               </div>
             </template>
@@ -103,7 +105,7 @@
                 <article v-for="(collection, index) in sortedItems" :key="collection.id" class="collection-row">
                   <div class="collection-art" :class="'collection-art--' + ((index % 4) + 1)"><span class="material-symbols-rounded">collections_bookmark</span></div>
                   <div><h3>{{ collection.title }}</h3><p>{{ collection.count }} books</p></div>
-                  <button aria-label="Collection options"><span class="material-symbols-rounded">more_horiz</span></button>
+                  <button aria-label="Collection information" @click="showToast('Demo collection: ' + collection.title + '. Account collection syncing is not available.')"><span class="material-symbols-rounded">info</span></button>
                 </article>
                 <button class="new-collection" @click="openNewCollection"><span class="material-symbols-rounded">add</span>New collection</button>
               </div>
@@ -147,9 +149,11 @@ import BookCover from "@/components/book/BookCover.vue"
 import BottomNav from "@/components/navigation/BottomNav.vue"
 import BottomSheet from "@/components/common/BottomSheet.vue"
 import AppButton from "@/components/common/AppButton.vue"
+import EmptyState from '@/components/common/EmptyState.vue'
+import { apiMode } from '@/services/api.js'
 import { waitlistBooks, borrowedBooks, readingBooks, userCollections, savedBooks } from "@/mock/data/library"
 
-const { current: activeNav } = useNav()
+const { current: activeNav, openBook } = useNav()
 const isReducedMotion = useReducedMotion()
 const root = ref(null)
 const content = ref(null)
@@ -166,11 +170,12 @@ let entrance = null
 let panelTween = null
 let toastTimer = null
 
-const lists = { waitlists: waitlistBooks, borrowed: borrowedBooks, reading: readingBooks, collections: userCollections, saved: savedBooks }
+const collections = ref(userCollections.map(item => ({ ...item })))
+const lists = computed(() => apiMode ? {} : { waitlists: waitlistBooks, borrowed: borrowedBooks, reading: readingBooks, collections: collections.value, saved: savedBooks.filter(book => !unsavedIds.value.has(book.id)) })
 const titles = { waitlists: "Items on hold", borrowed: "Currently borrowed", reading: "Currently reading", collections: "Collections", saved: "Saved books" }
 const sortNames = { waitlists: "Soonest", borrowed: "Due date", reading: "Recent", collections: "Updated", saved: "Recent" }
-const currentItems = computed(() => lists[activeTab.value] || [])
-const sortedItems = computed(() => sortAscending.value ? [...currentItems.value].reverse() : [...currentItems.value])
+const currentItems = computed(() => lists.value[activeTab.value] || [])
+const sortedItems = computed(() => [...currentItems.value].sort((a, b) => (a.title || '').localeCompare(b.title || '') * (sortAscending.value ? -1 : 1)))
 const panelTitle = computed(() => titles[activeTab.value])
 const sortLabel = computed(() => sortNames[activeTab.value])
 
@@ -197,11 +202,11 @@ function openNewCollection() {
 function createCollection() {
   const name = newCollectionName.value.trim()
   if (!name) return
-  userCollections.unshift({ id: Date.now(), title: name, description: newCollectionDescription.value.trim(), count: 0, type: "default" })
+  collections.value.unshift({ id: Date.now(), title: name, description: newCollectionDescription.value.trim(), count: 0, type: "default" })
   newCollectionName.value = ""
   newCollectionDescription.value = ""
   showNewCollectionSheet.value = false
-  showToast("Collection created")
+  showToast("Demo collection created for this visit")
 }
 async function animatePanel() {
   if (isReducedMotion.value) return

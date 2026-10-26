@@ -2,7 +2,7 @@
   <div class="admin-dashboard admin-page-enter">
     <header class="admin-page-heading admin-dashboard-hero"><div><p class="admin-eyebrow">YOUR LIBRARY, AT A GLANCE</p><h1>{{ apiMode ? 'Library overview' : greeting + ', Rohit' }}</h1><p>{{ apiMode ? 'Catalogue and locations from your library backend.' : 'Here’s what’s happening with your library today.' }}</p></div><span class="admin-date">{{ today }}</span></header>
     <template v-if="apiMode">
-      <div class="admin-kpis"><button class="admin-panel admin-kpi" @click="$emit('books', '')"><span class="admin-kpi-icon material-symbols-rounded">menu_book</span><div><p>Catalogue titles</p><strong>{{ loaded ? activeBooks.length : '—' }}</strong><small>From the database</small></div></button><button class="admin-panel admin-kpi" @click="$emit('shelves')"><span class="admin-kpi-icon material-symbols-rounded">shelves</span><div><p>Registered shelves</p><strong>{{ loaded ? state.shelves.length : '—' }}</strong><small>Manage physical locations</small></div></button></div>
+      <div class="admin-kpis"><button class="admin-panel admin-kpi" @click="$emit('books', '')"><span class="admin-kpi-icon material-symbols-rounded">menu_book</span><div><p>Loaded catalogue titles</p><strong>{{ loaded ? activeBooks.length : '—' }}</strong><small>{{ hasMoreBooks ? 'More titles available in Books' : 'From the database' }}</small></div></button><button class="admin-panel admin-kpi" @click="$emit('shelves')"><span class="admin-kpi-icon material-symbols-rounded">shelves</span><div><p>Registered shelves</p><strong>{{ loaded ? state.shelves.length : '—' }}</strong><small>Manage physical locations</small></div></button></div>
       <section class="admin-panel admin-quick-actions"><header class="admin-panel-heading"><h2>Library operations</h2></header><button @click="$emit('add-book')"><span class="material-symbols-rounded">add_box</span>Register a book<span class="material-symbols-rounded">chevron_right</span></button><button @click="$emit('shelves')"><span class="material-symbols-rounded">add_location_alt</span>Manage shelves<span class="material-symbols-rounded">chevron_right</span></button><button @click="current = 'admin-atlas'"><span class="material-symbols-rounded">smart_toy</span>Open Atlas<span class="material-symbols-rounded">chevron_right</span></button><p class="admin-muted">Circulation, member records, and activity history are not provided by the LiBot backend.</p></section>
     </template>
     <template v-else>
@@ -32,7 +32,7 @@ import ActivityChart from './components/ActivityChart.vue'
 import BookCover from '@/components/book/BookCover.vue'
 import { useNav } from '@/composables/useNav'
 const emit = defineEmits(['books', 'add-book', 'members', 'shelves', 'notice'])
-const { state, activeBooks, loans, attention, markAvailable, apiMode, loaded } = useAdminStore()
+const { state, activeBooks, loans, attention, markAvailable, apiMode, loaded, hasMoreBooks } = useAdminStore()
 const { current } = useNav()
 const allActivity = ref(false)
 const hour = new Date().getHours()

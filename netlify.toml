@@ -1,0 +1,50 @@
+# Netlify configuration for Libris frontend
+# Proxies /api/* requests to the Render backend at https://libot-8okb.onrender.com
+# The :splat placeholder strips the /api prefix when forwarding
+
+[build]
+  command = "npm run check"
+  publish = "dist"
+
+[[redirects]]
+  # Proxy API requests to the Render backend
+  # Browser requests to /api/auth/session -> Backend receives /auth/session
+  # Browser requests to /api/book/search?q=test -> Backend receives /book/search?q=test
+  from = "/api/*"
+  to = "https://libot-8okb.onrender.com/:splat"
+  status = 200
+  force = true
+  # Netlify automatically forwards:
+  # - HTTP method (GET, POST, PUT, PATCH, DELETE, OPTIONS)
+  # - Query string parameters
+  # - Request headers (including Cookie, X-CSRF-Token, Content-Type, Authorization)
+  # - Request body
+  # - Response headers (including Set-Cookie)
+
+[[headers]]
+  # Security headers for all responses
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  # No caching for HTML entry point
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  # Long-term caching for versioned assets
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Optional: Configure pretty URLs (enabled by default)
+# [build.processing]
+#   pretty_urls = true

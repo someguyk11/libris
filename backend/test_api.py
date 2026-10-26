@@ -26,8 +26,11 @@ class BackendTests(unittest.TestCase):
         from guidance_access import operational_guard
         app.dependency_overrides[operational_guard] = lambda: None
         self.addCleanup(lambda: app.dependency_overrides.pop(operational_guard, None))
-        database.Base.metadata.create_all(database.engine)
+        upgrade(database.engine)
+        from guidance_migrate import upgrade_guidance
+        upgrade_guidance(database.engine)
         with database.engine.begin() as connection:
+            connection.execute(text('DELETE FROM guidance_tasks'))
             for table in ('routes', 'robots', 'checkpoints', 'books', 'shelves'):
                 connection.execute(text(f'DELETE FROM {table}'))
         runtime.clear()
@@ -89,6 +92,8 @@ class BackendTests(unittest.TestCase):
         submitted = self.submit(recording_id, movement)
         delivered = self.client.get('/robot/robot1/command').json()['data']
         self.assertEqual(submitted['command_id'], delivered['command_id'])
+        started = self.client.post('/robot/robot1/command/result', json=self.result(delivered, status='started'))
+        self.assertEqual(started.status_code, 200, started.text)
         body = self.result(delivered, sensors=sensors)
         response = self.client.post('/robot/robot1/command/result', json=body)
         self.assertEqual(response.status_code, 200, response.text)
@@ -286,6 +291,7 @@ class BackendTests(unittest.TestCase):
         self.execute(recording, 'stop'); self.confirm(recording, 1, start)
         command = self.submit(recording)
         self.client.get('/robot/robot1/command')
+        self.assertEqual(self.client.post('/robot/robot1/command/result', json=self.result(command, status='started')).status_code, 200)
         body = {'name': 'Recorded', 'destination_checkpoint_id': destination, 'status': 'active'}
         waiting = self.client.post(f'/recordings/{recording}/save', json=body)
         self.assertEqual(waiting.status_code, 202)

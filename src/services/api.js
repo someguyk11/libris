@@ -9,31 +9,48 @@ export async function request(path, options = {}) {
     // mutation (especially robot commands) after dispatch.
     try { await sessionRequest('/auth/session') } catch { /* Server authorizes the actual request. */ }
   }
+  const { timeout = path.startsWith('/auth/') ? 45000 : 15000, signal, ...fetchOptions } = options
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
+  const abort = () => controller.abort()
+  if (signal?.aborted) abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  const timer = setTimeout(abort, timeout)
   try {
     const response = await fetch(baseUrl + path, {
-      ...options, credentials: 'include', signal: controller.signal,
+      ...fetchOptions, credentials: 'include', signal: controller.signal,
       headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}), ...options.headers },
     })
-    const data = await response.json().catch(() => null)
+    const text = await response.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch {
+      if (response.ok) throw new Error('Backend returned an invalid JSON response.')
+    }
     if (!response.ok) {
+      if (response.status === 401) {
+        csrfToken = null
+        if (!path.startsWith('/auth/') && typeof window !== 'undefined') window.dispatchEvent(new Event('libris:session-expired'))
+      }
       const detail = Array.isArray(data?.detail) ? data.detail.map(item => `${item.loc?.slice(1).join('.')}: ${item.msg}`).join('; ') : data?.detail
-      const error = new Error(detail || `Backend request failed (${response.status}).`)
+      const error = new Error(typeof detail === 'string' ? detail : `Backend request failed (${response.status}).`)
       error.status = response.status
       throw error
     }
+    if (response.status !== 204 && (data === null || typeof data !== 'object')) throw new Error('Backend returned an empty or invalid response.')
     return data
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('Backend request timed out. Check the connection before retrying.')
+    if (error.name === 'AbortError') {
+      if (signal?.aborted) throw error
+      throw new Error('Backend request timed out. Check the connection before retrying.')
+    }
     if (error instanceof TypeError) throw new Error('Backend unavailable. Start the Python server and check the API URL.')
     throw error
-  } finally { clearTimeout(timer) }
+  } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
 const json = (method, body) => ({ method, body: JSON.stringify(body) })
 const robotPath = id => `/robot/${encodeURIComponent(id)}`
 async function sessionRequest(path, options) {
   const session = await request(path, options)
+  if (typeof session?.authenticated !== 'boolean') throw new Error('Backend returned an invalid session response.')
   csrfToken = session.csrf_token || null
   return session
 }
@@ -43,7 +60,10 @@ export const authApi = {
   signup: (email, password) => request('/auth/signup', json('POST', { email, password })),
   verify: (email, token) => sessionRequest('/auth/otp/verify', json('POST', { email, token })),
   resend: email => request('/auth/otp/resend', json('POST', { email })),
-  logout: async () => { await request('/auth/logout', { method: 'POST' }); csrfToken = null },
+  forgotPassword: email => request('/auth/password/forgot', json('POST', { email })),
+  verifyRecovery: (email, token) => sessionRequest('/auth/password/verify', json('POST', { email, token })),
+  resetPassword: async password => { const result = await request('/auth/password/reset', json('POST', { password })); csrfToken = null; return result },
+  logout: async () => { const result = await request('/auth/logout', { method: 'POST' }); csrfToken = null; return result },
 }
 export const backend = {
   requestGuidance: bookId => request('/guidance-requests', json('POST', { book_id: bookId })),
@@ -56,8 +76,11 @@ export const backend = {
   stopGuidance: id => request(`/robots/${encodeURIComponent(id)}/guidance-stop`, { method: 'POST' }),
   confirmPosition: (id, checkpointId, taskId = null) => request(`/robots/${encodeURIComponent(id)}/checkpoint-confirmation`, json('POST', { checkpoint_id: checkpointId, operator_confirmed: true, task_id: taskId })),
   mapShelf: (id, checkpointId) => request(`/shelves/${id}/destination`, json('PATCH', { destination_checkpoint_id: checkpointId || null })),
-  books: query => request(`/book/search/${encodeURIComponent(query || '%')}`),
+  books: (query, { limit = 50, offset = 0, signal } = {}) => request(`/book/search/${encodeURIComponent(query || '%')}?limit=${limit}&offset=${offset}`, { signal }),
+  book: id => request(`/book/${encodeURIComponent(id)}`),
   registerBook: book => request('/book/register', json('POST', book)),
+  lookupIsbn: isbn => request(`/book/metadata/${encodeURIComponent(isbn)}`),
+  registerBulk: batch => request('/book/register-bulk', json('POST', batch)),
   shelves: () => request('/shelves/'),
   saveShelf: (shelf, id) => request(id == null ? '/shelves/' : `/shelves/${id}`, json(id == null ? 'POST' : 'PUT', shelf)),
   deleteShelf: id => request(`/shelves/${id}`, { method: 'DELETE' }),
@@ -83,4 +106,5 @@ export const backend = {
   discardRecording: id => request(`/recordings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   reconfigure: (id, config) => request(`${robotPath(id)}/reconfigure`, json('POST', config)),
   reset: id => request(`${robotPath(id)}/reset`, { method: 'POST' }),
+  recoverRobot: (id, body) => request(`${robotPath(id)}/recovery`, json('POST', body)),
 }

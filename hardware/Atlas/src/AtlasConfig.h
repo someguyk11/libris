@@ -61,6 +61,18 @@ constexpr SensorPins Sensors[SensorCount] = {
 // trigger compatibility for the actual ultrasonic model before enabling GPIO.
 constexpr bool SensorElectricalInterfaceConfirmed = false;
 
+// Optional LSM6DSO diagnostics only: V1 safety/navigation uses encoders and
+// ultrasonics, not attitude estimates. No inferred wiring or bus address.
+constexpr bool ImuDiagnosticsEnabled = false;
+constexpr int ImuSdaPin = UnconfiguredPin;
+constexpr int ImuSclPin = UnconfiguredPin;
+constexpr uint8_t ImuAddress = 0; // confirm SA0: 0x6A or 0x6B.
+constexpr bool ImuElectricalInterfaceConfirmed = false;
+constexpr uint32_t ImuBusHz = 100000;
+constexpr uint16_t ImuBusTimeoutMs = 10;
+constexpr uint32_t ImuSampleIntervalMs = 20;
+constexpr uint32_t ImuMaximumAgeMs = 200;
+
 constexpr uint32_t PwmFrequencyHz = 20000;
 constexpr uint8_t PwmResolutionBits = 8;
 constexpr uint8_t FirstPwmChannel = 0; // core 2.x: reserves four consecutive channels.
@@ -252,8 +264,10 @@ inline const char* tuningError() {
 inline bool distanceCalibrated() {
     return SingleSignalEncodersConfirmed && CountEdges != EncoderEdges::Unconfigured &&
         positive(LeftCountsPerWheelRevolution) && positive(RightCountsPerWheelRevolution) &&
-        (3.141592654f * WheelDiameterCm / LeftCountsPerWheelRevolution <= DistanceToleranceCm) &&
-        (3.141592654f * WheelDiameterCm / RightCountsPerWheelRevolution <= DistanceToleranceCm);
+        // Distance commands stop at the first edge inside tolerance or beyond the target.
+        // One-edge quantization must fit the EXISTING endpoint acceptance bound.
+        (3.141592654f * WheelDiameterCm / LeftCountsPerWheelRevolution <= CheckpointDistanceToleranceCm) &&
+        (3.141592654f * WheelDiameterCm / RightCountsPerWheelRevolution <= CheckpointDistanceToleranceCm);
 }
 inline const char* navigationTuningError() {
     // All elapsed-time comparisons are unsigned and bounded below half rollover.
@@ -281,7 +295,7 @@ inline bool turnsCalibrated() {
 
 enum class AtlasFault : uint8_t {
     None, Configuration, Pwm, Obstacle, Sensor, StallLeft, StallRight,
-    MovementTimeout, EmergencyStop, ControlOverrun
+    MovementTimeout, EmergencyStop, ControlOverrun, EncoderTarget
 };
 inline const char* atlasFaultName(AtlasFault fault) {
     switch (fault) {
@@ -295,6 +309,7 @@ inline const char* atlasFaultName(AtlasFault fault) {
         case AtlasFault::MovementTimeout: return "MOVE_TIMEOUT";
         case AtlasFault::EmergencyStop: return "E_STOP";
         case AtlasFault::ControlOverrun: return "CONTROL_GAP";
+        case AtlasFault::EncoderTarget: return "ENCODER_TARGET";
     }
     return "UNKNOWN";
 }

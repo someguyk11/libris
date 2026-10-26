@@ -23,10 +23,12 @@ CheckpointManager::Result CheckpointManager::update(
     const MotionController::Progress& p, const SensorManager& sensors, uint32_t nowMs) {
     if (!active_ || result_ != Result::Waiting) return result_;
     // Reject an overrun or unequal wheel travel; re-observing cannot fix odometry.
-    if (!positive(p.targetCm) || !isfinite(p.leftCm) || !isfinite(p.rightCm) ||
-        fabsf(p.leftCm - p.targetCm) > CheckpointDistanceToleranceCm ||
-        fabsf(p.rightCm - p.targetCm) > CheckpointDistanceToleranceCm ||
-        fabsf(p.leftCm - p.rightCm) > CheckpointWheelMismatchCm) {
+    const float lt = p.leftTargetCm > 0 ? p.leftTargetCm : p.targetCm;
+    const float rt = p.rightTargetCm > 0 ? p.rightTargetCm : p.targetCm;
+    if (!positive(lt) || !positive(rt) || !isfinite(p.leftCm) || !isfinite(p.rightCm) ||
+        fabsf(p.leftCm - lt) > CheckpointDistanceToleranceCm ||
+        fabsf(p.rightCm - rt) > CheckpointDistanceToleranceCm ||
+        fabsf((p.leftCm - lt) - (p.rightCm - rt)) > CheckpointWheelMismatchCm) {
         result_ = Result::Failed;
         return result_;
     }

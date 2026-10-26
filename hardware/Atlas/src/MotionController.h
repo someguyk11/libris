@@ -17,12 +17,15 @@ public:
         float rightCm;
         float targetCm;
         float fraction;
+        float leftTargetCm = 0;
+        float rightTargetCm = 0;
     };
 
     bool begin();
     void update(uint32_t nowMs);
     bool moveDistance(float signedCentimetres, uint16_t duty = AtlasConfig::CruiseDuty);
     bool turn90(bool clockwise, uint16_t duty = AtlasConfig::TurnDuty);
+    bool replayTicks(uint32_t left, uint32_t right, Kind kind);
     // Explicit continuation only; preserve BOTH original encoder baselines and
     // target (including coast while stopped). Safety must have granted permission.
     bool resume();
@@ -66,6 +69,8 @@ private:
     uint32_t baseline_[2] = {0, 0};
     float duties_[2] = {0, 0};
     float targetCm_ = 0;
+    bool tickReplay_ = false;
+    uint32_t tickTarget_[2] = {0, 0};
     uint16_t requestedDuty_ = 0;
     uint32_t startedAtMs_ = 0;
     uint32_t lastControlMs_ = 0;

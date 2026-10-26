@@ -24,10 +24,10 @@ from guidance_access import operational_guard, validate_config
 @asynccontextmanager
 async def lifespan(app):
     get_config()  # Fail startup on unsafe/incomplete enabled auth configuration.
+    validate_config()
     upgrade(engine)
     upgrade_auth(engine)
     upgrade_guidance(engine)
-    validate_config()
     with SessionLocal() as db:
         robot.reset_runtime(db)
         guidance.recover(db)
@@ -39,11 +39,20 @@ async def lifespan(app):
         with suppress(asyncio.CancelledError):
             await worker
 
-app = FastAPI(title='Libris / LiBot Backend', lifespan=lifespan)
+class LibrisAPI(FastAPI):
+    def build_middleware_stack(self):
+        # Wrap ServerErrorMiddleware too, so unhandled 500s retain CORS headers.
+        return CORSMiddleware(
+            super().build_middleware_stack(),
+            allow_origins=allowed_origins(),
+            allow_credentials=True,
+            allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+            allow_headers=['Content-Type', 'X-CSRF-Token'],
+        )
+
+
+app = LibrisAPI(title='Libris / LiBot Backend', lifespan=lifespan)
 app.add_middleware(AuthSafetyMiddleware, origins=allowed_origins())
-app.add_middleware(CORSMiddleware,
-    allow_origins=allowed_origins(),
-    allow_credentials=True, allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allow_headers=['Content-Type', 'X-CSRF-Token'])
 app.include_router(auth.router)
 app.include_router(guidance.router)
 for operational_router in (books.router, shelves.router, robot.router, routes.router, checkpoints.router, recordings.router):
@@ -51,10 +60,10 @@ for operational_router in (books.router, shelves.router, robot.router, routes.ro
 
 @app.exception_handler(RequestValidationError)
 async def safe_auth_validation(request: Request, error: RequestValidationError):
-    if request.url.path == '/auth' or request.url.path.startswith('/auth/') or '/guidance' in request.url.path:
+    if request.url.path == '/auth' or request.url.path.startswith('/auth/') or '/guidance' in request.url.path or request.url.path.endswith('/reconfigure'):
         # Default Pydantic errors include rejected input (passwords/OTP codes).
         return JSONResponse(status_code=422, content={'detail': [
-            {'loc': list(item['loc']), 'type': item['type'], 'msg': 'Invalid authentication input.'}
+            {'loc': list(item['loc']), 'type': item['type'], 'msg': 'Invalid sensitive input.'}
             for item in error.errors()
         ]})
     return await request_validation_exception_handler(request, error)

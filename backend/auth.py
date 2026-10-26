@@ -147,7 +147,7 @@ def issue(db, request, response, tokens, email, purpose='user', verified_otp=Fal
         db.commit()
     set_cookie(response, raw, duration)
     return {'authenticated': purpose == 'user', 'purpose': purpose, 'csrf_token': csrf_token(raw),
-            'user': {'id': user_id, 'email': canonical_email, 'email_verified': True}}
+            'user': public_user(user_id, canonical_email)}
 
 
 @dataclass
@@ -215,10 +215,15 @@ def require_user(request: Request, db=Depends(get_db)):
     return authenticate(db, request)
 
 
+def public_user(user_id, email):
+    from guidance_access import staff_ids
+    return {'id': user_id, 'email': email, 'email_verified': True, 'is_staff': user_id in staff_ids()}
+
+
 def public_session(context):
     return {'authenticated': context.purpose == 'user', 'purpose': context.purpose,
             'csrf_token': context.csrf, 'expires_at': context.expires_at.isoformat(),
-            'user': {'id': context.user_id, 'email': context.email, 'email_verified': True}}
+            'user': public_user(context.user_id, context.email)}
 
 
 def send_email(db, request, email, action, operation):

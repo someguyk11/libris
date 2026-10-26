@@ -2,11 +2,15 @@
 from pathlib import Path
 from sqlalchemy import inspect, text
 from database import Base, engine, RobotModel, CheckpointModel, RouteModel
+from book_migrate import require_compatible_books
 
 VERSION = '20261018_atlas_v1_encoder_v2'
 SQL_FILE = Path(__file__).with_name('migrations') / '20261018_atlas_v1_encoder.sql'
 
 def upgrade(target_engine=engine):
+    # Fail before any startup DDL on a previous catalogue schema. Bibliography
+    # upgrades are an explicit operator action, never an automatic production edit.
+    require_compatible_books(target_engine)
     inspector = inspect(target_engine)
     columns = lambda table: {column['name'] for column in inspector.get_columns(table)} if inspector.has_table(table) else set()
     legacy = 'robot_id' in columns('robots') or 'shelf_id' in columns('routes') or inspector.has_table('route_steps')

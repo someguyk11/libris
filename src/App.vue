@@ -1,5 +1,16 @@
 <template>
-    <ExploreView v-if="current === 'explore'" />
+    <main v-if="blocked" class="session-gate" role="status">
+      <p>{{ !ready ? 'Checking your session…' : sessionError || (user ? 'Staff access is required.' : 'Sign in to continue.') }}</p>
+      <button v-if="ready" @click="requireSignIn">Sign in</button>
+      <button v-if="ready" @click="refresh">Check session again</button>
+      <button @click="current = 'explore'">Back to Libris</button>
+    </main>
+    <DiscoverView v-else-if="apiMode && current === 'explore'" />
+    <main v-else-if="apiMode && ['rooms', 'room', 'groups'].includes(current)" class="session-gate">
+      <h1>Reading rooms</h1><p>Live reading rooms are not supported by this backend. No room has been joined.</p>
+      <button @click="current = 'discover'">Browse books</button>
+    </main>
+    <ExploreView v-else-if="current === 'explore'" />
     <DiscoverView v-else-if="current === 'discover'" />
     <MyLibraryView v-else-if="current === 'library'" />
     <ProfileView v-else-if="current === 'profile'" />
@@ -13,16 +24,31 @@
 
 <script setup>
 import { useNav } from "@/composables/useNav"
-import ExploreView from "@/views/ExploreView.vue"
-import DiscoverView from "@/views/DiscoverView.vue"
-import MyLibraryView from "@/views/MyLibrary.vue"
-import AuthView from "@/views/AuthView.vue"
-import ProfileView from "@/views/ProfileView.vue"
-import BookDetailsView from "@/views/BookDetailsView.vue"
-import RoomView from "@/components/reading-rooms/RoomView.vue"
-import RoomsView from "@/views/RoomsView.vue"
-import AdminView from "@/views/admin/AdminView.vue"
+import { computed, watch, defineAsyncComponent } from 'vue'
+import { apiMode } from '@/services/api.js'
+import { useSession } from '@/composables/useSession.js'
+const ExploreView = defineAsyncComponent(() => import('@/views/ExploreView.vue'))
+const DiscoverView = defineAsyncComponent(() => import('@/views/DiscoverView.vue'))
+const MyLibraryView = defineAsyncComponent(() => import('@/views/MyLibrary.vue'))
+const AuthView = defineAsyncComponent(() => import('@/views/AuthView.vue'))
+const ProfileView = defineAsyncComponent(() => import('@/views/ProfileView.vue'))
+const BookDetailsView = defineAsyncComponent(() => import('@/views/BookDetailsView.vue'))
+const RoomView = defineAsyncComponent(() => import('@/components/reading-rooms/RoomView.vue'))
+const RoomsView = defineAsyncComponent(() => import('@/views/RoomsView.vue'))
+const AdminView = defineAsyncComponent(() => import('@/views/admin/AdminView.vue'))
 import { rooms } from "@/mock/data"
 
-const { current, selectedRoom, leaveRoom } = useNav()
+const { current, selectedRoom, leaveRoom, requireSignIn } = useNav()
+const { ready, user, isStaff, error: sessionError, refresh } = useSession()
+const protectedRoute = computed(() => ['library', 'profile', 'rooms', 'room', 'groups'].includes(current.value) || current.value.startsWith('admin-'))
+const blocked = computed(() => apiMode && protectedRoute.value && (!ready.value || !user.value || (current.value.startsWith('admin-') && !isStaff.value)))
+watch([ready, current, user, sessionError], () => {
+  if (apiMode && ready.value && protectedRoute.value && !user.value && !sessionError.value) requireSignIn()
+}, { immediate: true })
+if (apiMode) refresh()
 </script>
+
+<style scoped>
+.session-gate { min-height:100vh; padding:3rem 1.5rem; color:var(--text-primary); background:var(--bg-primary); }
+.session-gate button { margin:.5rem .5rem 0 0; padding:.65rem; color:var(--accent); background:var(--bg-secondary); border:1px solid var(--border-soft); border-radius:10px; }
+</style>

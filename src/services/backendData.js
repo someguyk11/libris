@@ -5,8 +5,8 @@ export function shelfFromApi(shelf) {
 export function bookFromApi(book) {
   return { id: String(book.id), backendId: book.id, title: book.title, author: book.author, isbn: book.isbn,
     shelf: String(book.shelf_id), status: book.available ? 'Available' : 'Unavailable',
-    publish_date: book.publish_date || '', genre: '', language: '', archived: false, due: '', borrowerId: '', added: '',
-    cover: `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg` }
+    publish_date: book.publish_date || '', published: book.publish_date || '', description: book.bibliography?.description || '', publisher: book.bibliography?.publisher || '', bibliography: book.bibliography || null, genre: '', language: '', archived: false, due: '', borrowerId: '', added: '',
+    cover: book.bibliography?.cover_url || `https://covers.openlibrary.org/b/isbn/${book.isbn}-M.jpg` }
 }
 export function shelfPayload(input) {
   const shelf_name = String(input.name || '').trim()

@@ -162,8 +162,10 @@ MotionController::Progress MotionController::progress() {
     encoderCounts(left, right);
     const float l = distanceFor(0, left - baseline_[0]);
     const float r = distanceFor(1, right - baseline_[1]);
-    const float fraction = targetCm_ > 0 ? fminf(1.0f, fminf(l, r) / targetCm_) : 0;
-    return {state_, kind_, l, r, targetCm_, fraction};
+    const float lt = tickReplay_ ? distanceFor(0, tickTarget_[0]) : targetCm_;
+    const float rt = tickReplay_ ? distanceFor(1, tickTarget_[1]) : targetCm_;
+    const float fraction = lt > 0 && rt > 0 ? fminf(1.0f, fminf(l / lt, r / rt)) : 0;
+    return {state_, kind_, l, r, targetCm_, fraction, lt, rt};
 }
 
 bool MotionController::start(float targetCm, Kind kind, uint16_t duty, bool resuming) {
@@ -176,7 +178,7 @@ bool MotionController::start(float targetCm, Kind kind, uint16_t duty, bool resu
     // one HIGH brake input would briefly apply full reverse/forward drive.
     stopOutputs(StopMode::Coast);
     if (!ready_ || fault_ != AtlasFault::None) return false;
-    if (!resuming) encoderCounts(baseline_[0], baseline_[1]);
+    if (!resuming) { encoderCounts(baseline_[0], baseline_[1]); tickReplay_ = false; }
     duties_[0] = duties_[1] = 0;
     targetCm_ = targetCm;
     kind_ = kind;
@@ -198,6 +200,25 @@ bool MotionController::turn90(bool clockwise, uint16_t duty) {
     return start(wheelTravelCm, clockwise ? Kind::Clockwise90 : Kind::Counterclockwise90, duty);
 }
 
+bool MotionController::replayTicks(uint32_t left, uint32_t right, Kind kind) {
+    if (!left || !right || (kind != Kind::Forward && kind != Kind::Backward &&
+        kind != Kind::Clockwise90 && kind != Kind::Counterclockwise90)) return false;
+    const float l = distanceFor(0, left), r = distanceFor(1, right);
+    if (!positive(l) || !positive(r) || l > MaximumMoveCm || r > MaximumMoveCm) return false;
+    const bool turn = kind == Kind::Clockwise90 || kind == Kind::Counterclockwise90;
+    if (turn) {
+        if (!turnsCalibrated()) return false;
+        const float scale = kind == Kind::Clockwise90 ? ClockwiseTurnScale : CounterclockwiseTurnScale;
+        const float target = 3.141592654f * WheelTrackCm * 0.25f * scale;
+        // Metadata alone is insufficient: reject tick targets inconsistent with local 90-degree calibration.
+        if (fabsf(l - target) > CheckpointDistanceToleranceCm ||
+            fabsf(r - target) > CheckpointDistanceToleranceCm) return false;
+    } else if (fabsf(l - r) > CheckpointWheelMismatchCm) return false;
+    if (!start(fmaxf(l, r), kind, turn ? TurnDuty : CruiseDuty)) return false;
+    tickTarget_[0] = left; tickTarget_[1] = right; tickReplay_ = true;
+    return true;
+}
+
 bool MotionController::resume() {
     if (!resumable_ || moving() || state_ == State::Complete ||
         (kind_ != Kind::Forward && kind_ != Kind::Backward && !turnsCalibrated())) return false;
@@ -212,14 +233,22 @@ void MotionController::update(uint32_t nowMs) {
     if (elapsed < ControlIntervalMs) return;
     lastControlMs_ = nowMs;
     const Progress p = progress();
-    const float remaining[2] = {targetCm_ - p.leftCm, targetCm_ - p.rightCm};
-    if (remaining[0] <= DistanceToleranceCm && remaining[1] <= DistanceToleranceCm) {
+    const float remaining[2] = {p.leftTargetCm - p.leftCm, p.rightTargetCm - p.rightCm};
+    uint32_t left = 0, right = 0;
+    if (tickReplay_) {
+        encoderCounts(left, right);
+        left -= baseline_[0]; right -= baseline_[1];
+        if (left > tickTarget_[0] || right > tickTarget_[1]) { emergencyStop(AtlasFault::EncoderTarget); return; }
+    }
+    const bool reached[2] = {tickReplay_ ? left == tickTarget_[0] : remaining[0] <= DistanceToleranceCm,
+                            tickReplay_ ? right == tickTarget_[1] : remaining[1] <= DistanceToleranceCm};
+    if (reached[0] && reached[1]) {
         stopOutputs(NormalStopMode);
         if (state_ != State::Failed) { state_ = State::Complete; resumable_ = false; }
         return;
     }
     for (uint8_t side = 0; side < 2; ++side) {
-        if (remaining[side] <= DistanceToleranceCm) {
+        if (reached[side]) {
             duties_[side] = 0; // each wheel group stops at its own encoder target.
         } else {
             const float ratio = fminf(1.0f, remaining[side] / SlowdownDistanceCm);

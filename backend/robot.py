@@ -1,8 +1,9 @@
 """Atlas V1 persistent identity + temporary command/telemetry state."""
 import re
 import time
+from uuid import UUID
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +11,7 @@ from database import get_db, RobotModel
 from atlas_schemas import RobotCreate, RobotUpdate, RobotResponse, CommandSubmission, ExecutionResult, SensorSample
 from recordings import apply_result, add_sample
 import atlas_runtime as runtime
+import atlas_recovery as recovery
 
 router = APIRouter(tags=['Atlas'])
 
@@ -71,6 +73,9 @@ def send_command(robot_id: str, body: CommandSubmission, db: Session = Depends(g
     with runtime.lock:
         get_or_create_robot(db, robot_id)
         state = runtime.state(robot_id)
+        pending_recovery = recovery.expire(state)
+        if body.command.value != 'stop' and pending_recovery and pending_recovery['status'] in ('queued', 'accepted'):
+            raise HTTPException(409, 'Wait for recovery to finish before issuing movement.')
         if body.command.value == 'stop' and state.get('guidance_task_id'):
             from guidance import active, fail
             task = active(db, robot_id)
@@ -82,10 +87,12 @@ def send_command(robot_id: str, body: CommandSubmission, db: Session = Depends(g
         return {'status': 200, 'data': runtime.wire(command)}
 
 @router.get('/robot/{robot_id}/command')
-def get_command(robot_id: str, db: Session = Depends(get_db)):
+def get_command(robot_id: str, db: Session = Depends(get_db), boot_id: str | None = Query(default=None, pattern=r'^[a-f0-9]{32}$'), recovery_completed: UUID | None = None):
     with runtime.lock:
         get_or_create_robot(db, robot_id)
         state = runtime.state(robot_id)
+        if boot_id is not None:
+            recovery.observe_boot(db, robot_id, boot_id, str(recovery_completed) if recovery_completed else None)
         command = runtime.pending_commands.get(state['active_command_id'])
         if command and command['command'] != 'stop' and command['status'] not in ('completed', 'failed') and time.time() - command['refreshed_at'] > runtime.COMMAND_TTL:
             command = runtime.submit(robot_id, 'stop', safety=True)
@@ -99,6 +106,8 @@ def get_command(robot_id: str, db: Session = Depends(get_db)):
             if command['status'] in ('completed', 'failed'):
                 data['command'] = 'stop'
         data['factory_reset'], data['new_network'] = state['factory_reset_triggered'], state['pending_reconfig']
+        data['recovery'] = recovery.pending(state)
+        data['auto_reconnect'] = state['auto_reconnect']
         state['factory_reset_triggered'] = False; state['pending_reconfig'] = None
         return {'status': 200, 'data': data}
 
@@ -127,7 +136,9 @@ def update_telemetry(robot_id: str, body: RobotTelemetry, db: Session = Depends(
 @router.get('/robot/{robot_id}/status')
 def get_robot_status(robot_id: str, db: Session = Depends(get_db)):
     with runtime.lock:
-        value = get_or_create_robot(db, robot_id)
+        value = db.get(RobotModel, robot_id)
+        if not value:
+            raise HTTPException(404, 'Atlas not found.')
         state = runtime.state(robot_id)
         online = bool(state['last_seen'] and 0 <= time.time() - state['last_seen'] <= 15)
         command = runtime.pending_commands.get(state['active_command_id'])
@@ -137,7 +148,20 @@ def get_robot_status(robot_id: str, db: Session = Depends(get_db)):
             drive_ready=drive_ready(state), network_change_pending=state['pending_reconfig'] is not None,
             residing_checkpoint_id=value.residing_checkpoint_id, last_sequence_number=value.last_sequence_number,
             firmware_version=value.firmware_version, recording_id=state['recording_id'], checkpoint_location_verified=online and state['checkpoint_location_verified'], guidance_task_id=state.get('guidance_task_id'))
+        data.update(boot_id=state['boot_id'], recovery=recovery.expire(state), auto_reconnect=state['auto_reconnect'],
+            recovery_capable=state['recovery_capable'], replay_connected=False, imu_status='not_implemented')
         return {'status': 200, 'data': data}
+
+@router.post('/robot/{robot_id}/recovery', status_code=202)
+def request_recovery(robot_id: str, body: recovery.RecoveryRequest, db: Session = Depends(get_db)):
+    with runtime.lock:
+        get_or_create_robot(db, robot_id)
+        return {'status': 202, 'data': recovery.queue(db, robot_id, body)}
+
+@router.post('/robot/{robot_id}/recovery/ack')
+def acknowledge_recovery(robot_id: str, body: recovery.RecoveryAck):
+    with runtime.lock:
+        return recovery.acknowledge(robot_id, body)
 
 @router.post('/robot/{robot_id}/reconfigure')
 def register_network_provision(robot_id: str, body: NetworkProvisionRequest, db: Session = Depends(get_db)):

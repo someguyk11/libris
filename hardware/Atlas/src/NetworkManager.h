@@ -20,6 +20,8 @@ public:
     void approveConfiguration() { configurationApproved_.store(configurationRequest_.load()); }
     bool reconfigure(const char* ssid, const char* password);
     void factoryReset();
+    void setAutoReconnect(bool enabled) { autoReconnect_ = enabled; }
+    void reconnect(); // worker only, AFTER main-loop stop approval.
 private:
     struct Profile { char ssid[32]; char password[64]; };
     enum class Configuration : uint8_t { None, Save, SaveOnly, Forget, Reset };
@@ -39,6 +41,7 @@ private:
     bool attempting_ = false;
     bool wasConnected_ = false;
     bool autoConnectHeld_ = false; // Save-only must not immediately reconnect using the new profile.
+    bool autoReconnect_ = true;
     bool connectionFailed_ = false;
     char attemptSsid_[32]{};
     uint8_t nextSlot_ = 0;

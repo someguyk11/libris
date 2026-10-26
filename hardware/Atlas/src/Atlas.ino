@@ -4,9 +4,11 @@
 #include "SafetyController.h"
 #include "Navigation.h"
 #include "TelemetryManager.h"
+#include "ImuManager.h"
 
 MotionController motion;
 SensorManager sensors;
+ImuManager imu;
 SafetyController safety(motion, sensors);
 CheckpointManager checkpoints;
 Routes routes(motion, sensors, checkpoints);
@@ -73,6 +75,11 @@ void diagnostics(uint32_t nowMs) {
             static_cast<unsigned>(navigation.pauseReason()), static_cast<unsigned>(routes.index()),
             static_cast<unsigned>(routes.count()), static_cast<unsigned>(routes.error()),
             static_cast<unsigned>(checkpoints.validatedCount()), static_cast<unsigned>(checkpoints.retries()));
+    } else if (page == AtlasConfig::SensorCount + 3) {
+        const auto value = imu.reading(nowMs);
+        snprintf(line, sizeof(line), "imu diagnostic valid=%u error=%u age=%lu ms (not a navigation/safety input)\n",
+            static_cast<unsigned>(value.valid), static_cast<unsigned>(value.error),
+            static_cast<unsigned long>(nowMs - value.timestampMs));
     } else {
         const uint8_t index = page - 3;
         const auto reading = sensors.reading(static_cast<AtlasConfig::SensorId>(index), nowMs);
@@ -81,7 +88,7 @@ void diagnostics(uint32_t nowMs) {
             static_cast<unsigned>(reading.error), static_cast<unsigned>(reading.consecutiveFailures),
             static_cast<unsigned>(reading.faulted));
     }
-    page = (page + 1) % (AtlasConfig::SensorCount + 3);
+    page = (page + 1) % (AtlasConfig::SensorCount + 4);
     logLine(line);
 }
 
@@ -89,6 +96,7 @@ void setup() {
     if (AtlasConfig::DiagnosticsEnabled || AtlasConfig::HardwareTestMode) Serial.begin(AtlasConfig::SerialBaud);
     motion.begin();
     sensors.begin();
+    const bool imuReady = imu.begin();
     safety.begin(millis());
     navigation.begin(millis());
     const bool networkWorkerReady = telemetry.begin();
@@ -96,6 +104,7 @@ void setup() {
         // Startup only: there is no motion permission here.
         Serial.println("Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
         if (!networkWorkerReady) Serial.println("Network worker unavailable; backend movement disabled.");
+        if (!imuReady) Serial.println("IMU diagnostics unavailable: check explicit bus configuration.");
         if (!BackendClient::configured()) Serial.println("Backend disabled: provision private device key and trusted TLS CA.");
         const char* error = AtlasConfig::pinConfigurationError();
         if (error) Serial.println(error);

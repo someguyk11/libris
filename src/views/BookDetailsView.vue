@@ -1,5 +1,7 @@
 <template>
   <main ref="root" class="book-details">
+    <div v-if="!book" class="detail-panel" role="status"><p>{{ loading ? 'Loading book…' : loadError || 'Book not found.' }}</p><button @click="closeBook">Back to catalogue</button><button v-if="loadError" @click="loadBook">Retry</button></div>
+    <template v-else>
     <section class="book-hero" :style="{ '--hero-cover': `url(${book.cover || libraryArt})` }">
       <div class="book-hero__scene" :style="{ backgroundImage: `url(${libraryArt})` }" aria-hidden="true"></div>
       <header class="book-hero__actions">
@@ -7,10 +9,10 @@
           <span class="material-symbols-rounded">arrow_back</span>
         </button>
         <div>
-          <button aria-label="Share book" @click="notify('Share link copied')">
+          <button aria-label="Share book" @click="shareBook">
             <span class="material-symbols-rounded">ios_share</span>
           </button>
-          <button :aria-label="saved ? 'Remove bookmark' : 'Save book'" @click="saved = !saved">
+          <button v-if="!apiMode" :aria-label="saved ? 'Remove bookmark' : 'Save book'" @click="saved = !saved; notify('Demo bookmark changed for this visit')">
             <span class="material-symbols-rounded" :class="{ filled: saved }">{{ saved ? 'bookmark' : 'bookmark_border' }}</span>
           </button>
         </div>
@@ -23,8 +25,8 @@
           <h1>{{ book.title }}</h1>
           <h2>{{ book.author }}</h2>
           <div class="book-hero__chips">
-            <span>{{ book.genre || 'Fiction' }}</span>
-            <span>{{ moodLabel }}</span>
+            <span v-if="book.genre">{{ book.genre }}</span>
+            <span v-if="!apiMode">{{ moodLabel }}</span>
           </div>
         </div>
       </div>
@@ -59,10 +61,11 @@
       <section class="detail-panel reveal-block facts-panel">
         <p class="detail-label">Edition details</p>
         <div class="facts">
-          <span><i class="material-symbols-rounded">menu_book</i>{{ book.pages || 320 }} pages</span>
-          <span><i class="material-symbols-rounded">calendar_today</i>{{ book.published || 2018 }}</span>
-          <span><i class="material-symbols-rounded">translate</i>{{ book.language || 'English' }}</span>
-          <span><i class="material-symbols-rounded">corporate_fare</i>Penguin Random House</span>
+          <span v-if="book.pages"><i class="material-symbols-rounded">menu_book</i>{{ book.pages }} pages</span>
+          <span v-if="book.published"><i class="material-symbols-rounded">calendar_today</i>{{ book.published }}</span>
+          <span v-if="book.language"><i class="material-symbols-rounded">translate</i>{{ book.language }}</span>
+          <span v-if="book.publisher"><i class="material-symbols-rounded">corporate_fare</i>{{ book.publisher }}</span>
+          <span v-if="book.isbn">ISBN {{ book.isbn }}</span>
         </div>
       </section>
 
@@ -80,7 +83,7 @@
         </button>
       </section>
 
-      <section class="lists-section reveal-block">
+      <section v-if="!apiMode" class="lists-section reveal-block">
         <p class="detail-label">Add to your lists</p>
         <div>
           <button
@@ -94,24 +97,40 @@
         </div>
       </section>
     </div>
+    </template>
 
     <Transition name="toast"><div v-if="toast" class="book-toast" role="status">{{ toast }}</div></Transition>
   </main>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import BookCover from "@/components/book/BookCover.vue"
 import ReaderGuidance from '@/components/book/ReaderGuidance.vue'
-import { apiMode } from '@/services/api.js'
+import { apiMode, backend } from '@/services/api.js'
+import { bookFromApi } from '@/services/backendData.js'
 import { useNav } from "@/composables/useNav"
 import useReducedMotion from "@/composables/useReducedMotion"
 import { gsap } from "@/animations/setup"
 import libraryArt from "@/assets/library.png"
 import { continueReading } from "@/mock/data"
 
-const { selectedBook, closeBook } = useNav()
-const book = computed(() => selectedBook.value || continueReading[0])
+const { selectedBook, selectedBookId, closeBook } = useNav()
+const liveBook = ref(null), loading = ref(false), loadError = ref('')
+const book = computed(() => apiMode ? liveBook.value : selectedBook.value || continueReading[0])
+let loadVersion = 0
+async function loadBook() {
+  if (!apiMode) return
+  const version = ++loadVersion
+  liveBook.value = null; loadError.value = ''; loading.value = true
+  try {
+    if (!/^\d+$/.test(String(selectedBookId.value || ''))) throw new Error('This book link is invalid.')
+    const result = await backend.book(selectedBookId.value)
+    if (version === loadVersion) liveBook.value = bookFromApi(result)
+  } catch (cause) { if (version === loadVersion) loadError.value = cause.message }
+  finally { if (version === loadVersion) loading.value = false }
+}
+watch(selectedBookId, () => { expanded.value = false; loadBook() })
 const isReducedMotion = useReducedMotion()
 const root = ref(null)
 const expanded = ref(false)
@@ -135,8 +154,7 @@ const moodLabel = computed(() => {
   return "Thoughtful"
 })
 const description = computed(() => {
-  const lead = book.value.description || "A quietly compelling book that rewards attention and stays with you after the final page."
-  return `${lead} This edition is available through your preferred library and has been selected for readers looking for clear ideas, memorable writing, and a rewarding reading experience.`
+  return book.value?.description || 'No description is available for this edition.'
 })
 
 function notify(message) {
@@ -144,9 +162,13 @@ function notify(message) {
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { toast.value = "" }, 2200)
 }
+async function shareBook() {
+  try { await navigator.clipboard.writeText(window.location.href); notify('Book link copied') }
+  catch { notify('Could not copy the link. Copy it from your address bar.') }
+}
 function borrowBook() {
   borrowed.value = !borrowed.value
-  notify(borrowed.value ? `${book.value.title} is ready in My Library` : "Borrow cancelled")
+  notify(borrowed.value ? 'Demo borrowing preview only; no loan was created' : 'Demo preview cancelled')
 }
 function toggleList(label) {
   const next = new Set(lists.value)
@@ -156,14 +178,16 @@ function toggleList(label) {
 }
 
 onMounted(() => {
+  loadBook()
   window.scrollTo({ top: 0 })
-  if (isReducedMotion.value) return
+  if (apiMode || isReducedMotion.value) return
   entrance = gsap.timeline({ defaults: { ease: "power3.out" } })
     .fromTo(".book-hero__scene", { scale: 1.06, opacity: 0 }, { scale: 1, opacity: .72, duration: 1.05 })
     .fromTo(".book-hero__content > *", { y: 22, opacity: 0 }, { y: 0, opacity: 1, duration: .65, stagger: .1 }, "-=.65")
     .fromTo(root.value.querySelectorAll(".reveal-block"), { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: .48, stagger: .07 }, "-=.3")
 })
 onBeforeUnmount(() => {
+  loadVersion++
   entrance?.kill()
   clearTimeout(toastTimer)
 })

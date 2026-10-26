@@ -1,5 +1,4 @@
 """LiBot book/shelf models and API schemas, shared with Libris."""
-import os
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
@@ -8,12 +7,17 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, CheckConstraint, UniqueConstraint, JSON, Uuid, event, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from isbn import isbn13, isbn10, normalize_isbn
+from urllib.parse import urlparse
+from database_config import database_url
+from sqlalchemy.engine import make_url
 
 load_dotenv(Path(__file__).with_name('.env'))
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///' + str(Path(__file__).with_name('libris.db')))
-engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False} if DATABASE_URL.startswith('sqlite:') else {})
-if DATABASE_URL.startswith('sqlite:'):
+DATABASE_URL = database_url()
+IS_SQLITE = make_url(DATABASE_URL).get_backend_name() == 'sqlite'
+engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False} if IS_SQLITE else {})
+if IS_SQLITE:
     @event.listens_for(engine, 'connect')
     def enable_foreign_keys(connection, _):
         connection.execute('PRAGMA foreign_keys=ON')
@@ -49,6 +53,7 @@ class BookModel(Base):
     title = Column(String, nullable=False)
     author = Column(String, nullable=False)
     publish_date = Column(String, nullable=True)
+    bibliography = Column(JSON, nullable=True)
     available = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
@@ -113,13 +118,69 @@ class ShelfResponse(ShelfCreate):
     shelf_id: int
     destination_checkpoint_id: Optional[str] = None
 
-class BookRegistration(BaseModel):
+class BookBibliography(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra='forbid')
+    isbn10: Optional[str] = None
+    publisher: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None, max_length=20000)
+    edition: Optional[str] = Field(default=None, max_length=500)
+    cover_url: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator('cover_url')
+    @classmethod
+    def safe_cover(cls, value):
+        if not value:
+            return None
+        parsed = urlparse(value)
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError('Cover image must be a valid HTTPS URL without credentials.')
+        return value
+
+
+class BookDetails(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
-    isbn: str = Field(pattern=r'^(?:\d{13}|\d{9}[\dXx])$')
+    isbn: str
     title: str = Field(min_length=1, max_length=200)
     author: str = Field(min_length=1, max_length=100)
-    publish_date: Optional[str] = 'Date Unknown'
+    publish_date: Optional[str] = Field(default=None, max_length=100)
+    bibliography: Optional[BookBibliography] = None
+
+    @field_validator('isbn')
+    @classmethod
+    def valid_isbn(cls, value):
+        return isbn13(value)
+
+    @model_validator(mode='after')
+    def original_isbn(self):
+        equivalent = isbn10(self.isbn)
+        if self.bibliography and self.bibliography.isbn10:
+            if len(normalize_isbn(self.bibliography.isbn10)) != 10 or isbn13(self.bibliography.isbn10) != self.isbn:
+                raise ValueError('ISBN-10 must identify the same edition as ISBN-13.')
+        if equivalent:
+            self.bibliography = (self.bibliography or BookBibliography()).model_copy(update={'isbn10': equivalent})
+        return self
+
+
+class BookRegistration(BookDetails):
     shelf_id: int
+    require_new: bool = False
+    expected_existing_id: Optional[int] = None
+
+
+class ExistingBookReference(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    isbn: str
+    existing_id: int = Field(ge=1)
+
+    @field_validator('isbn')
+    @classmethod
+    def valid_isbn(cls, value):
+        return isbn13(value)
+
+
+class BulkBookRegistration(BaseModel):
+    shelf_id: int
+    books: list[BookDetails | ExistingBookReference] = Field(min_length=1, max_length=50)
 
 class BookResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -128,6 +189,7 @@ class BookResponse(BaseModel):
     title: str
     author: str
     publish_date: Optional[str]
+    bibliography: Optional[BookBibliography] = None
     available: bool
     shelf_id: int
     shelf: Optional[ShelfResponse] = None

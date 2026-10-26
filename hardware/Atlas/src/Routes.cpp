@@ -135,5 +135,6 @@ void Routes::cancel() {
     if (motion_.moving()) motion_.stop();
     if (state_ == State::Recording) { count_ = 0; hasRoute_ = false; }
     started_ = validating_ = needsResume_ = endpointReached_ = false;
-    state_ = State::Cancelled;
+    // Cleanup must retain a failed run's diagnostic until a new run/recording.
+    if (state_ != State::Failed) state_ = State::Cancelled;
 }

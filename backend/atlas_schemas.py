@@ -83,12 +83,35 @@ class RouteSegment(StrictModel):
     checkpoint_id: Optional[UUID]
     movement: Movement
     checkpoint_sensor_readings: Optional[SensorReadings] = None
+    # Legacy routes remain readable, but cannot drive protocol 3 until re-recorded.
+    motion_kind: Literal['forward', 'backward', 'left', 'right', 'stop'] | None = None
+    turn_degrees: int | None = Field(default=None, strict=True)
 
     @model_validator(mode='after')
     def checkpoint_snapshot_only(self):
         if self.checkpoint_sensor_readings is not None and self.checkpoint_id is None:
             raise ValueError('Permanent sensor snapshots require a confirmed checkpoint.')
+        if self.motion_kind in ('left', 'right'):
+            if self.turn_degrees != 90:
+                raise ValueError('Atlas V1 supports exactly 90 degree turns.')
+        elif self.turn_degrees is not None:
+            raise ValueError('Turn angle requires a turn kind.')
+        if self.motion_kind is not None:
+            validate_measured_motion(self.motion_kind, self.movement)
         return self
+
+def validate_measured_motion(kind, movement):
+    """Unsigned single-signal counts cannot establish direction; bind to command."""
+    directions = {'forward': ('forward', 'forward'), 'backward': ('backward', 'backward'),
+                  'left': ('backward', 'forward'), 'right': ('forward', 'backward'),
+                  'stop': ('stop', 'stop')}
+    expected = directions[kind.replace('_turn', '')]
+    actual = (movement.left_direction, movement.right_direction)
+    if kind == 'stop':
+        if movement.left_encoder_ticks or movement.right_encoder_ticks or actual != expected:
+            raise ValueError('Stop completion requires zero measured motion.')
+    elif actual != expected or not movement.left_encoder_ticks or not movement.right_encoder_ticks:
+        raise ValueError('Measured wheel directions/counts do not match the command.')
 
 class RouteCreate(StrictModel):
     name: str = Field(min_length=1, max_length=100)

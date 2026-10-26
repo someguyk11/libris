@@ -41,12 +41,12 @@ def cookie_value(request):
 def set_cookie(response, cookie, seconds):
     config = get_config()
     response.set_cookie(config.cookie_name, cookie, max_age=max(1, int(seconds)), secure=config.secure_cookie,
-                        httponly=True, samesite='lax', path='/')
+                        httponly=True, samesite=config.cookie_samesite, path='/')
 
 
 def clear_cookie(response):
     config = get_config()
-    response.delete_cookie(config.cookie_name, path='/', secure=config.secure_cookie, httponly=True, samesite='lax')
+    response.delete_cookie(config.cookie_name, path='/', secure=config.secure_cookie, httponly=True, samesite=config.cookie_samesite)
 
 
 def audit(db, request, kind, success, user_id=None, email=None):
@@ -92,7 +92,9 @@ class AuthSafetyMiddleware:
         path = scope.get('path', '')
         is_guidance = '/guidance' in path or path.endswith(('/destination', '/checkpoint-confirmation', '/home'))
         is_command_poll = path.startswith('/robot/') and path.endswith('/command')
-        if scope['type'] != 'http' or not (path == '/auth' or path.startswith('/auth/') or is_guidance or is_command_poll):
+        protected = path == '/auth' or path.startswith('/auth/') or is_guidance or is_command_poll
+        operational = path.startswith(('/robot/', '/robots', '/routes', '/recordings', '/checkpoints', '/shelves', '/book/'))
+        if scope['type'] != 'http' or not (protected or operational):
             return await self.app(scope, receive, send)
         async def safe_send(message):
             if message['type'] == 'http.response.start':
@@ -102,7 +104,7 @@ class AuthSafetyMiddleware:
                 message = {**message, 'headers': headers}
             await send(message)
         headers = dict(scope.get('headers', []))
-        if scope['method'] not in ('GET', 'HEAD', 'OPTIONS'):
+        if protected and scope['method'] not in ('GET', 'HEAD', 'OPTIONS'):
             is_device = path.startswith('/robot/') and '/guidance/' in path
             if not is_device and headers.get(b'origin', b'').decode('latin-1') not in self.origins:
                 return await JSONResponse({'detail': 'Untrusted request origin.'}, status_code=403)(scope, receive, safe_send)
