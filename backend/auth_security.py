@@ -60,9 +60,11 @@ def _hit(db, key, limit, seconds):
     insert = pg_insert if db.bind.dialect.name == 'postgresql' else sqlite_insert
     table = AuthRateLimit.__table__
     statement = insert(table).values(key=keyed(key), count=1, resets_at=current + timedelta(seconds=seconds))
+    # Old long-window entries must not retain their cooldown after configuration changes.
+    expired = (table.c.resets_at <= current) | (table.c.resets_at > current + timedelta(seconds=seconds))
     statement = statement.on_conflict_do_update(index_elements=[table.c.key], set_={
-        'count': case((table.c.resets_at <= current, 1), else_=table.c.count + 1),
-        'resets_at': case((table.c.resets_at <= current, current + timedelta(seconds=seconds)), else_=table.c.resets_at),
+        'count': case((expired, 1), else_=table.c.count + 1),
+        'resets_at': case((expired, current + timedelta(seconds=seconds)), else_=table.c.resets_at),
     }).returning(table.c.count, table.c.resets_at)
     count, resets_at = db.execute(statement).one()
     db.commit()  # Persist failed attempts too; no request transaction is open yet.
@@ -74,8 +76,9 @@ def _hit(db, key, limit, seconds):
 def throttle(db, request, action, email=None, sending=False):
     config = get_config()
     ip = request.client.host if request.client else 'unknown'
-    _hit(db, f'ip:{action}:{ip}', config.ip_limit, config.rate_window)
-    if email:
+    if action != 'signup':
+        _hit(db, f'ip:{action}:{ip}', config.ip_limit, config.rate_window)
+    if email and action != 'signup':
         _hit(db, f'email:{action}:{email}', config.email_limit, config.rate_window)
     if sending:
         # Shared across signup/resend/recovery, not bypassable by switching endpoint.

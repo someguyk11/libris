@@ -107,7 +107,7 @@ The current PlatformIO project is `hardware/Atlas/`, environment `esp32dev`, usi
 - Authenticated HTTPS requires the correct CA certificate and per-device key in an ignored `AtlasSecrets.local.h`, based on the example header. Never disable certificate verification to make a connection work.
 - The approved layout uses a **3 MiB factory application partition on a configured 4 MiB ESP32**, with no OTA update workflow. The generated layout/build was validated, but the new partition table has not been flashed. Confirm physical flash capacity and plan backups before migration.
 - Sensor stops and network leases are software safeguards, not an independent physical emergency stop. Normal/emergency stopping currently uses coast behavior; physical stopping distance is unverified.
-- Local routes are RAM-only. Backend guidance protocol v2, Atlas OTP/display, exact independent-wheel route replay, and battery monitoring are not implemented in this firmware.
+- Local routes are RAM-only. Backend guidance protocol v2, exact independent-wheel route replay, and battery monitoring are not implemented in this firmware. Atlas guidance no longer requires a display code.
 
 **No physical safety certification or deployment readiness is implied.** Do not upload or activate motors simply because compilation succeeds.
 

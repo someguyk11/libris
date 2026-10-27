@@ -443,7 +443,7 @@ There is no supported API for general navigation/progress/route/event/battery
 telemetry, so these fields/endpoints are not invented. Faults are exposed through
 execution failures and existing local diagnostics. There is no battery interface.
 Backend recording/save/checkpoint attestation remains staff-managed; local RAM
-routes are not uploaded. **Guidance protocol 2, OTP/display, exact independent
+routes are not uploaded. Atlas display codes have been retired. **Guidance protocol 2, exact independent
 wheel-tick replay, arrival confirmation and SLAM/vision are not implemented.**
 
 ### Layer 3 validation checklist (not yet performed)

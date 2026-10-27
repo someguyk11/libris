@@ -43,6 +43,15 @@ class AuthSession(AuthBase):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class AuthProfile(AuthBase):
+    __tablename__ = 'auth_profiles'
+    __table_args__ = {'schema': SCHEMA}
+    user_id = Column(String(36), ForeignKey(account_fk(), ondelete='CASCADE'), primary_key=True)
+    username = Column(String(30), nullable=True, unique=True)
+    display_name = Column(String(80), nullable=False, default='')
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=now, onupdate=now)
+
+
 class AuthRateLimit(AuthBase):
     __tablename__ = 'auth_rate_limits'
     __table_args__ = {'schema': SCHEMA}

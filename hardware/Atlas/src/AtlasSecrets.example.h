@@ -5,3 +5,6 @@
 // PEM CA certificate(s) for BackendBaseUrl; use the issuing root, not a leaf pin.
 // Empty means backend HTTPS is disabled. NEVER use setInsecure().
 #define ATLAS_TLS_CA R"PEM()PEM"
+// Supabase anon (public) key for robot_commands table access.
+// Empty means Supabase-backed command polling is disabled.
+#define SUPABASE_ANON_KEY ""

@@ -1,5 +1,6 @@
 """Supabase identity + opaque server sessions. No membership or staff grants."""
 import secrets
+import re
 import threading
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -11,9 +12,10 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, TypeAdap
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from database import get_db
 from auth_config import get_config
-from auth_models import AuthAccount, AuthSession, now
+from auth_models import AuthAccount, AuthSession, AuthProfile, now
 from auth_provider import provider, ProviderError
 from auth_security import aware, digest, csrf_token, check_csrf, cookie_value, set_cookie, clear_cookie, audit, throttle
 
@@ -41,6 +43,37 @@ class EmailBody(BaseModel):
 
 class PasswordBody(EmailBody):
     password: SecretStr = Field(min_length=1, max_length=128)
+
+
+class ProfileBody(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    display_name: str = Field(default='', max_length=80)
+    username: str = Field(default='', max_length=30)
+
+    @field_validator('display_name', 'username', mode='before')
+    @classmethod
+    def trim(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator('username')
+    @classmethod
+    def valid_username(cls, value):
+        value = value.lower().removeprefix('@')
+        if value and not re.fullmatch(r'[a-z0-9_]{3,30}', value):
+            raise ValueError('Username must contain 3–30 letters, numbers, or underscores.')
+        return value
+
+
+class SignupBody(PasswordBody, ProfileBody):
+    pass
+
+
+class CallbackBody(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: str = Field(pattern='^(signup|email|recovery)$')
+    token_hash: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+    access_token: SecretStr | None = Field(default=None, min_length=1, max_length=8192)
+    refresh_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
 
 
 class OTPBody(EmailBody):
@@ -71,7 +104,9 @@ def serialized(db):
 
 def provider_failure(error, invalid='Invalid credentials or verification code.'):
     if error.status == 429:
-        raise HTTPException(429, 'Too many attempts. Please try again later.', headers={'Retry-After': str(get_config().rate_window)})
+        message = ('The email service has reached its sending limit. Please wait before requesting another email.'
+                   if error.code == 'over_email_send_rate_limit' else 'Too many attempts. Please try again shortly.')
+        raise HTTPException(429, message, headers={'Retry-After': str(error.retry_after or get_config().rate_window)})
     if error.status >= 500 or error.status < 400:
         raise HTTPException(503, 'Authentication service temporarily unavailable.')
     raise HTTPException(401, invalid)
@@ -86,7 +121,7 @@ def confirmed_user(access, expected_email=None):
             raise ValueError('Unverified email')
     except (KeyError, ValueError, TypeError):
         raise ProviderError(401) from None
-    return user_id, email
+    return user_id, email, user.get('user_metadata') or {}
 
 
 def encrypted_tokens(tokens):
@@ -113,14 +148,10 @@ def revoke_all(db, user_id):
 
 def issue(db, request, response, tokens, email, purpose='user', verified_otp=False):
     access, access_encrypted, refresh_encrypted, access_expiry = encrypted_tokens(tokens)
-    user_id, canonical_email = confirmed_user(access, email)
+    user_id, canonical_email, metadata = confirmed_user(access, email)
     with serialized(db):
         account = db.scalar(select(AuthAccount).where(AuthAccount.user_id == user_id).with_for_update())
         if account is None:
-            if not verified_otp:
-                # Even externally confirmed/imported identities must complete this
-                # application's OTP flow before getting a Libris session.
-                raise HTTPException(401, 'Invalid credentials or email verification is required.')
             insert = pg_insert if db.bind.dialect.name == 'postgresql' else sqlite_insert
             # Simultaneous successful OTP/recovery requests must not create two
             # accounts or fail a legitimate sign-in with a uniqueness error.
@@ -132,6 +163,18 @@ def issue(db, request, response, tokens, email, purpose='user', verified_otp=Fal
         if verified_otp:
             account.otp_verified_at = now()
         account.email = canonical_email
+        # Metadata supplies profile defaults only, after identity confirmation.
+        # It never grants privileges or reserves usernames before confirmation.
+        profile = db.get(AuthProfile, user_id)
+        if profile is None:
+            insert = pg_insert if db.bind.dialect.name == 'postgresql' else sqlite_insert
+            display = metadata.get('display_name', '') if isinstance(metadata, dict) else ''
+            username = str(metadata.get('username', '')).lower() if isinstance(metadata, dict) else ''
+            username = username if re.fullmatch(r'[a-z0-9_]{3,30}', username) else None
+            db.execute(insert(AuthProfile).values(user_id=user_id, display_name=str(display)[:80], username=username).on_conflict_do_nothing())
+            # A metadata username can be taken before confirmation; signing in
+            # must still work and the user can choose another in their profile.
+            db.execute(insert(AuthProfile).values(user_id=user_id, display_name=str(display)[:80]).on_conflict_do_nothing(index_elements=[AuthProfile.user_id]))
         old_cookie = cookie_value(request)
         old = db.scalar(select(AuthSession).where(AuthSession.token_hash == digest(old_cookie)).with_for_update()) if old_cookie else None
         if old:
@@ -147,7 +190,7 @@ def issue(db, request, response, tokens, email, purpose='user', verified_otp=Fal
         db.commit()
     set_cookie(response, raw, duration)
     return {'authenticated': purpose == 'user', 'purpose': purpose, 'csrf_token': csrf_token(raw),
-            'user': public_user(user_id, canonical_email)}
+            'user': public_user(user_id, canonical_email, db)}
 
 
 @dataclass
@@ -192,7 +235,7 @@ def authenticate(db, request, *, csrf=False, purpose='user', refresh=False):
                 # transient /user failure does not discard the new credential.
                 session.access_encrypted, session.refresh_encrypted = encrypted_access, encrypted_refresh
                 session.access_expires_at = expiry
-            confirmed_id, email = confirmed_user(access)
+            confirmed_id, email, _ = confirmed_user(access)
             if confirmed_id != session.user_id or email != account.email:
                 raise ProviderError(401)
         except InvalidToken:
@@ -215,15 +258,17 @@ def require_user(request: Request, db=Depends(get_db)):
     return authenticate(db, request)
 
 
-def public_user(user_id, email):
+def public_user(user_id, email, db):
     from guidance_access import staff_ids
-    return {'id': user_id, 'email': email, 'email_verified': True, 'is_staff': user_id in staff_ids()}
+    profile = db.get(AuthProfile, user_id)
+    return {'id': user_id, 'email': email, 'email_verified': True, 'is_staff': user_id in staff_ids(),
+            'display_name': profile.display_name if profile else '', 'username': profile.username if profile else None}
 
 
-def public_session(context):
+def public_session(context, db):
     return {'authenticated': context.purpose == 'user', 'purpose': context.purpose,
             'csrf_token': context.csrf, 'expires_at': context.expires_at.isoformat(),
-            'user': public_user(context.user_id, context.email)}
+            'user': public_user(context.user_id, context.email, db)}
 
 
 def send_email(db, request, email, action, operation):
@@ -235,6 +280,8 @@ def send_email(db, request, email, action, operation):
         db.commit()
         if error.status == 429 or error.status >= 500:
             provider_failure(error)
+        if error.code in ('weak_password', 'password_too_short'):
+            raise HTTPException(400, 'Choose a stronger password that meets the password policy.')
         # Do not expose existing/nonexistent/unconfirmed account distinctions.
         return {'message': 'If the request is eligible, check your email for a verification code.'}
     audit(db, request, action, True, email=email)
@@ -243,10 +290,33 @@ def send_email(db, request, email, action, operation):
 
 
 @router.post('/signup', status_code=202)
-def signup(body: PasswordBody, request: Request, db=Depends(get_db)):
+def signup(body: SignupBody, request: Request, db=Depends(get_db)):
     password = body.password.get_secret_value()
     password_policy(password)
-    return send_email(db, request, str(body.email), 'signup', lambda: provider.signup(str(body.email), password))
+    return send_email(db, request, str(body.email), 'signup', lambda: provider.signup(str(body.email), password,
+                      {'display_name': body.display_name, 'username': body.username}))
+
+
+@router.post('/callback')
+def callback(body: CallbackBody, request: Request, response: Response, db=Depends(get_db)):
+    throttle(db, request, 'callback')
+    try:
+        if body.token_hash and not body.access_token and not body.refresh_token:
+            tokens = provider.verify_link(body.token_hash.get_secret_value(), body.type)
+        elif body.access_token and body.refresh_token and not body.token_hash:
+            # Default Supabase email links already exchanged the one-time code.
+            # Refresh server-side; never trust expiry or identity from the URL.
+            tokens = provider.refresh(body.refresh_token.get_secret_value())
+            old_id, _, _ = confirmed_user(body.access_token.get_secret_value())
+            new_id, _, _ = confirmed_user(tokens['access_token'])
+            if old_id != new_id:
+                raise ProviderError(401)
+        else:
+            raise HTTPException(400, 'Invalid email link. Request a new one.')
+        return issue(db, request, response, tokens, None,
+                     purpose='recovery' if body.type == 'recovery' else 'user', verified_otp=True)
+    except ProviderError as error:
+        provider_failure(error, 'This email link is invalid or expired. Request a new one.')
 
 
 @router.post('/otp/resend', status_code=202)
@@ -282,12 +352,34 @@ def login(body: PasswordBody, request: Request, response: Response, db=Depends(g
 
 @router.get('/session')
 def session(request: Request, db=Depends(get_db)):
-    return public_session(authenticate(db, request, purpose=None))
+    return public_session(authenticate(db, request, purpose=None), db)
 
 
 @router.get('/me')
-def me(context=Depends(require_user)):
-    return public_session(context)
+def me(context=Depends(require_user), db=Depends(get_db)):
+    return public_session(context, db)
+
+
+@router.patch('/profile')
+def update_profile(body: ProfileBody, request: Request, db=Depends(get_db)):
+    context = authenticate(db, request, csrf=True)
+    throttle(db, request, 'profile')
+    with serialized(db):
+        account = db.scalar(select(AuthAccount).where(AuthAccount.user_id == context.user_id).with_for_update())
+        stored = db.get(AuthSession, context.id, populate_existing=True)
+        if not account or account.status != 'active' or not stored or stored.revoked_at:
+            raise HTTPException(401, 'Session unavailable. Please sign in again.')
+        profile = db.get(AuthProfile, context.user_id)
+        if profile is None:
+            profile = AuthProfile(user_id=context.user_id)
+            db.add(profile)
+        profile.display_name, profile.username = body.display_name, body.username or None
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, 'That username is already taken. Choose another.') from None
+    return public_session(context, db)
 
 
 @router.post('/refresh')
@@ -295,7 +387,7 @@ def refresh(request: Request, response: Response, db=Depends(get_db)):
     throttle(db, request, 'refresh')
     context = authenticate(db, request, csrf=True, purpose=None, refresh=True)
     set_cookie(response, cookie_value(request), (context.expires_at - now()).total_seconds())
-    return public_session(context)
+    return public_session(context, db)
 
 
 def logout_impl(request, response, db, all_sessions=False):

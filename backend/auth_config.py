@@ -60,9 +60,9 @@ def get_config():
         min_password=positive('AUTH_MIN_PASSWORD_LENGTH', 12),
         ip_limit=positive('AUTH_IP_LIMIT', 30),
         email_limit=positive('AUTH_EMAIL_LIMIT', 10),
-        rate_window=positive('AUTH_RATE_WINDOW_SECONDS', 300),
+        rate_window=positive('AUTH_RATE_WINDOW_SECONDS', 60),
         send_limit=positive('AUTH_EMAIL_SEND_LIMIT', 3),
-        send_window=positive('AUTH_EMAIL_SEND_WINDOW_SECONDS', 900),
+        send_window=positive('AUTH_EMAIL_SEND_WINDOW_SECONDS', 60),
     )
     if config.cookie_samesite not in ('lax', 'strict', 'none'):
         raise ValueError('AUTH_COOKIE_SAMESITE must be lax, strict, or none')

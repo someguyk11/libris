@@ -1,12 +1,15 @@
 """Supabase Auth REST boundary. Never return provider bodies to the browser."""
 import httpx
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from auth_config import get_config
 
 
 class ProviderError(Exception):
-    def __init__(self, status, code=''):
+    def __init__(self, status, code='', retry_after=None):
         self.status = status
         self.code = code
+        self.retry_after = retry_after
         super().__init__('Authentication provider request failed')
 
 
@@ -26,7 +29,16 @@ class SupabaseAuth:
             except ValueError:
                 raise ProviderError(503) from None
             if not response.is_success:
-                raise ProviderError(response.status_code, result.get('error_code', result.get('code', '')) if isinstance(result, dict) else '')
+                retry_after = None
+                value = response.headers.get('Retry-After', '')
+                try:
+                    retry_after = max(1, int(value))
+                except ValueError:
+                    try:
+                        retry_after = max(1, int((parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()))
+                    except (ValueError, TypeError, OverflowError):
+                        pass
+                raise ProviderError(response.status_code, result.get('error_code', result.get('code', '')) if isinstance(result, dict) else '', retry_after)
             if not isinstance(result, dict):
                 raise ProviderError(503)
             return result
@@ -39,9 +51,9 @@ class SupabaseAuth:
         if settings.get('mailer_autoconfirm') is not False or not isinstance(external, dict) or external.get('email') is not True:
             raise ProviderError(503, 'confirmation_configuration')
 
-    def signup(self, email, password):
+    def signup(self, email, password, metadata=None):
         self.require_confirmations()
-        result = self.request('POST', '/signup', {'email': email, 'password': password})
+        result = self.request('POST', '/signup', {'email': email, 'password': password, 'data': metadata or {}})
         if result.get('access_token'):
             raise ProviderError(503, 'confirmation_configuration')
 
@@ -50,6 +62,9 @@ class SupabaseAuth:
 
     def verify(self, email, token, recovery=False):
         return self.request('POST', '/verify', {'email': email, 'token': token, 'type': 'recovery' if recovery else 'email'})
+
+    def verify_link(self, token_hash, kind):
+        return self.request('POST', '/verify', {'token_hash': token_hash, 'type': kind})
 
     def resend(self, email):
         self.require_confirmations()

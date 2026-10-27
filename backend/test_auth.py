@@ -18,7 +18,7 @@ import auth
 from main import app
 from auth_config import get_config
 from auth_migrate import upgrade_auth
-from auth_models import AuthBase, AuthAccount, AuthSession, AuthRateLimit, AuthEvent, now
+from auth_models import AuthBase, AuthAccount, AuthSession, AuthRateLimit, AuthEvent, AuthProfile, now
 from auth_provider import SupabaseAuth, ProviderError
 from auth_security import set_cookie, clear_cookie, digest
 
@@ -35,13 +35,21 @@ class FakeSupabase:
         self.serial = 0
         self.password_value = PASSWORD
         self.logout_fails = False
+        self.metadata = {}
 
     def tokens(self):
         self.serial += 1
         return {'access_token': f'access-{self.serial}', 'refresh_token': f'refresh-{self.serial}', 'expires_in': 3600}
 
-    def signup(self, email, password):
-        pass
+    def signup(self, email, password, metadata=None):
+        self.metadata = metadata or {}
+
+    def verify_link(self, token_hash, kind):
+        if token_hash != 'valid-link-hash' or token_hash in self.used:
+            raise ProviderError(403)
+        self.used.add(token_hash)
+        self.verified = True
+        return self.tokens()
 
     def resend(self, email):
         pass
@@ -63,7 +71,8 @@ class FakeSupabase:
         return self.tokens()
 
     def user(self, access):
-        return {'id': self.id, 'email': EMAIL, 'email_confirmed_at': now().isoformat() if self.verified else None, 'is_anonymous': False}
+        return {'id': self.id, 'email': EMAIL, 'email_confirmed_at': now().isoformat() if self.verified else None,
+                'is_anonymous': False, 'user_metadata': self.metadata}
 
     def refresh(self, refresh):
         return self.tokens()
@@ -126,6 +135,106 @@ class AuthTests(unittest.TestCase):
         with patch.dict(os.environ, {'AUTH_STAFF_USER_IDS': ''}):
             self.assertFalse(self.client.get('/auth/session').json()['user']['is_staff'])
 
+    def test_signup_profile_is_linked_only_after_confirmation_and_can_be_edited(self):
+        result = self.post('/signup', {'email': EMAIL, 'password': PASSWORD,
+                                     'display_name': ' Reader Name ', 'username': 'Reader_42'})
+        self.assertEqual(result.status_code, 202)
+        with database.SessionLocal() as db:
+            self.assertIsNone(db.scalar(select(AuthProfile)))
+        session = self.verify().json()
+        self.assertEqual(session['user']['display_name'], 'Reader Name')
+        self.assertEqual(session['user']['username'], 'reader_42')
+        self.assertEqual(self.client.patch('/auth/profile', json={'username': 'changed'}, headers=ORIGIN).status_code, 403)
+        result = self.client.patch('/auth/profile', json={'display_name': 'New Name', 'username': 'NEW_READER'},
+                                   headers={**ORIGIN, 'X-CSRF-Token': session['csrf_token']})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(self.client.get('/auth/session').json()['user']['username'], 'new_reader')
+        with database.SessionLocal() as db:
+            profile = db.get(AuthProfile, self.fake.id)
+            self.assertEqual(profile.user_id, db.get(AuthAccount, self.fake.id).user_id)
+            self.assertEqual(profile.display_name, 'New Name')
+
+    def test_duplicate_username_does_not_block_login_and_cannot_be_claimed(self):
+        with database.SessionLocal() as db:
+            other_id = str(uuid4())
+            db.add(AuthAccount(user_id=other_id, email='other@example.com', otp_verified_at=now()))
+            db.flush()
+            db.add(AuthProfile(user_id=other_id, username='taken', display_name='Other'))
+            db.commit()
+        self.fake.metadata = {'username': 'taken'}
+        session = self.verify().json()
+        self.assertIsNone(session['user']['username'])
+        result = self.client.patch('/auth/profile', json={'username': 'TAKEN'},
+                                   headers={**ORIGIN, 'X-CSRF-Token': session['csrf_token']})
+        self.assertEqual(result.status_code, 409)
+        for invalid in ('ab', 'bad-name', 'bad space'):
+            self.assertEqual(self.client.patch('/auth/profile', json={'username': invalid},
+                             headers={**ORIGIN, 'X-CSRF-Token': session['csrf_token']}).status_code, 422)
+
+    def test_email_recovery_link_can_reset_password_but_not_edit_profile(self):
+        response = self.post('/callback', {'type': 'recovery', 'token_hash': 'valid-link-hash'})
+        self.assertEqual(response.status_code, 200, response.text)
+        session = response.json()
+        self.assertFalse(session['authenticated'])
+        self.assertEqual(self.client.get('/auth/me').status_code, 403)
+        self.assertEqual(self.client.patch('/auth/profile', json={'username': 'reader'},
+                         headers={**ORIGIN, 'X-CSRF-Token': session['csrf_token']}).status_code, 403)
+        self.assertEqual(self.post('/password/reset', {'password': 'new-strong-password-42'},
+                                   csrf=session['csrf_token']).status_code, 200)
+        self.assertEqual(self.post('/login', {'email': EMAIL, 'password': 'new-strong-password-42'}).status_code, 200)
+        self.assertEqual(self.post('/callback', {'type': 'recovery', 'token_hash': 'valid-link-hash'}).status_code, 401)
+
+    def test_signup_link_and_default_supabase_token_fragment(self):
+        self.assertTrue(self.post('/callback', {'type': 'signup', 'token_hash': 'valid-link-hash'}).json()['authenticated'])
+        result = self.post('/callback', {'type': 'recovery', 'access_token': 'provider-access', 'refresh_token': 'provider-refresh'})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()['purpose'], 'recovery')
+        self.assertNotIn('provider-access', result.text)
+        self.assertNotIn('provider-refresh', result.text)
+        self.assertEqual(self.post('/callback', {'type': 'email', 'access_token': 'incomplete'}).status_code, 400)
+        self.assertEqual(self.post('/callback', {'type': 'admin', 'token_hash': 'anything'}).status_code, 422)
+
+    def test_callback_rejects_mismatched_provider_identities(self):
+        self.fake.verified = True
+        original = self.fake.user
+        def identity(access):
+            result = original(access)
+            if access == 'wrong-user-access':
+                result['id'] = str(uuid4())
+            return result
+        with patch.object(self.fake, 'user', side_effect=identity):
+            result = self.post('/callback', {'type': 'recovery', 'access_token': 'wrong-user-access', 'refresh_token': 'refresh'})
+        self.assertEqual(result.status_code, 401)
+        self.assertNotIn('set-cookie', result.headers)
+
+    def test_provider_cooldown_is_preserved_and_short_local_windows_expire(self):
+        with patch.object(self.fake, 'signup', side_effect=ProviderError(429, 'over_email_send_rate_limit', 17)):
+            response = self.post('/signup', {'email': EMAIL, 'password': PASSWORD})
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers['retry-after'], '17')
+        self.assertIn('email service', response.json()['detail'])
+        self.assertEqual(get_config().rate_window, 60)
+        self.assertEqual(get_config().send_window, 60)
+        with database.SessionLocal() as db:
+            for row in db.scalars(select(AuthRateLimit)):
+                row.count = 999
+                row.resets_at = now() + timedelta(minutes=15)
+            db.commit()
+        self.assertEqual(self.post('/signup', {'email': EMAIL, 'password': PASSWORD}).status_code, 202)
+
+    def test_signup_uses_only_shared_send_guard_not_duplicate_attempt_buckets(self):
+        from auth_security import keyed
+        with database.SessionLocal() as db:
+            db.add(AuthRateLimit(key=keyed('email:signup:' + EMAIL), count=999, resets_at=now() + timedelta(seconds=60)))
+            db.commit()
+        self.assertEqual(self.post('/signup', {'email': EMAIL, 'password': PASSWORD}).status_code, 202)
+
+    def test_provider_password_policy_errors_are_not_disguised_as_sent_email(self):
+        with patch.object(self.fake, 'signup', side_effect=ProviderError(422, 'weak_password')):
+            response = self.post('/signup', {'email': EMAIL, 'password': PASSWORD})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('stronger password', response.json()['detail'])
+
     def test_otp_creates_only_verified_reader_and_hides_credentials(self):
         response = self.verify()
         body = response.json()
@@ -151,11 +260,12 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(replay.status_code, 401)
         self.assertNotIn('set-cookie', replay.headers)
 
-    def test_provider_confirmation_alone_cannot_bypass_application_otp(self):
+    def test_existing_provider_confirmed_user_can_login_without_local_otp(self):
         self.fake.verified = True
         response = self.post('/login', {'email': EMAIL, 'password': PASSWORD})
-        self.assertEqual(response.status_code, 401)
-        self.assertNotIn('set-cookie', response.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['user']['id'], self.fake.id)
+        self.assertIn('set-cookie', response.headers)
 
     def test_unconfirmed_anonymous_and_wrong_identity_are_rejected(self):
         for claims in (
@@ -371,7 +481,7 @@ class GuidanceAuthenticationTests(unittest.TestCase):
             for model in (database.BookModel, database.ShelfModel, database.RouteModel, database.RobotModel, database.CheckpointModel):
                 db.query(model).delete()
             db.commit()
-        test_api.runtime.clear(); guidance.deliveries.clear(); guidance.otp_displays.clear(); guidance.arrivals.clear()
+        test_api.runtime.clear(); guidance.deliveries.clear(); guidance.arrivals.clear()
         self.addCleanup(self.cleanup_guidance)
         self.config = patch.dict(os.environ, {'GUIDANCE_ENABLED': 'true', 'AUTH_STAFF_USER_IDS': self.fake.id, 'ATLAS_DEVICE_KEYS': '{"robot1":"' + 'd' * 40 + '"}'})
         self.config.start(); self.addCleanup(self.config.stop)
@@ -398,7 +508,7 @@ class GuidanceAuthenticationTests(unittest.TestCase):
         from guidance_models import GuidanceTask
         with database.SessionLocal() as db:
             db.query(GuidanceTask).delete(); db.commit()
-        test_api.runtime.clear(); guidance.deliveries.clear(); guidance.otp_displays.clear(); guidance.arrivals.clear()
+        test_api.runtime.clear(); guidance.deliveries.clear(); guidance.arrivals.clear()
 
     def poll(self):
         response = self.device.get('/robot/robot1/guidance/command?protocol=2&stopped=true', headers=self.device_headers)
@@ -411,16 +521,12 @@ class GuidanceAuthenticationTests(unittest.TestCase):
         no_csrf = TestClient(app); self.addCleanup(no_csrf.close); no_csrf.cookies.update(self.client.cookies)
         self.assertEqual(no_csrf.post('/guidance-requests', json={'book_id': self.book}, headers=ORIGIN).status_code, 403)
         task = self.client.post('/guidance-requests', json={'book_id': self.book}).json()
-        code = self.poll()['atlas_otp']
+        wire = self.poll()
         self.assertEqual(self.client.get('/robot/robot1/guidance/command?protocol=2&stopped=true').status_code, 401)
         self.assertEqual(self.device.get('/robot/robot2/guidance/command?protocol=2&stopped=true', headers=self.device_headers).status_code, 401)
-        self.assertEqual(stranger.post(f"/guidance-requests/{task['id']}/verify", json={'atlas_otp': code}, headers=ORIGIN).status_code, 401)
-        verified = self.client.post(f"/guidance-requests/{task['id']}/verify", json={'atlas_otp': code})
-        self.assertEqual(verified.status_code, 200, verified.text)
-        self.assertEqual(verified.json()['status'], 'queued')
-        self.assertNotIn(code, self.client.get('/guidance-requests').text)
-        self.assertNotIn(code, self.client.get('/robots/robot1/guidance-requests').text)
-        self.assertTrue(self.poll()['session_id'])
+        self.assertEqual(wire['command'], 'replay_segment')
+        self.assertTrue(wire['session_id'])
+        self.assertEqual(self.client.get('/guidance-requests/' + task['id']).json()['session_id'], wire['session_id'])
 
     def test_guidance_toggle_never_opens_staff_or_robot_operations(self):
         stranger = TestClient(app); self.addCleanup(stranger.close)
@@ -431,10 +537,7 @@ class GuidanceAuthenticationTests(unittest.TestCase):
             self.assertEqual(self.client.post('/shelves/', json={'shelf_name': 'Unauthorized', 'floor': 1}).status_code, 403)
             self.assertEqual(stranger.get('/book/search/Matilda').status_code, 200)
 
-    def test_otp_rejections_redact_input_and_recovery_cookie_cannot_guide(self):
-        task = self.client.post('/guidance-requests', json={'book_id': self.book}).json(); self.poll()
-        rejected = self.client.post(f"/guidance-requests/{task['id']}/verify", json={'atlas_otp': 'not-secret-OTP'})
-        self.assertEqual(rejected.status_code, 422); self.assertNotIn('not-secret-OTP', rejected.text)
+    def test_recovery_cookie_cannot_guide(self):
         recovered = self.post('/password/verify', {'email': EMAIL, 'token': '654321'})
         self.assertEqual(recovered.status_code, 200)
         self.client.headers['X-CSRF-Token'] = recovered.json()['csrf_token']
@@ -471,6 +574,17 @@ class ProviderBoundaryTests(unittest.TestCase):
             self.assertEqual(request.call_args.args[2], {'email': EMAIL, 'token': '123456', 'type': 'email'})
             provider.verify(EMAIL, '654321', recovery=True)
             self.assertEqual(request.call_args.args[2]['type'], 'recovery')
+            provider.verify_link('one-time-hash', 'recovery')
+            self.assertEqual(request.call_args.args[2], {'token_hash': 'one-time-hash', 'type': 'recovery'})
+
+    def test_rest_preserves_provider_retry_after(self):
+        client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(
+            429, headers={'Retry-After': '23'}, json={'error_code': 'over_email_send_rate_limit'})))
+        config = SimpleNamespace(url='https://test-project.supabase.co', public_key='sb_publishable_test')
+        with patch('auth_provider.get_config', return_value=config), patch('auth_provider.httpx.Client', return_value=client):
+            with self.assertRaises(ProviderError) as caught:
+                SupabaseAuth().recover(EMAIL)
+        self.assertEqual(caught.exception.retry_after, 23)
 
 
 if __name__ == '__main__':

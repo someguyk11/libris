@@ -1,11 +1,9 @@
 <template>
     <main v-if="blocked" class="session-gate" role="status">
-      <p>{{ !ready ? 'Checking your session…' : sessionError || (user ? 'Staff access is required.' : 'Sign in to continue.') }}</p>
-      <button v-if="ready" @click="requireSignIn">Sign in</button>
-      <button v-if="ready" @click="refresh">Check session again</button>
+      <p>Staff access is required.</p>
       <button @click="current = 'explore'">Back to Libris</button>
     </main>
-    <DiscoverView v-else-if="apiMode && current === 'explore'" />
+    <GuestGuideView v-else-if="current === 'guide' || current.startsWith('guide-')" />
     <main v-else-if="apiMode && ['rooms', 'room', 'groups'].includes(current)" class="session-gate">
       <h1>Reading rooms</h1><p>Live reading rooms are not supported by this backend. No room has been joined.</p>
       <button @click="current = 'discover'">Browse books</button>
@@ -27,6 +25,7 @@ import { useNav } from "@/composables/useNav"
 import { computed, watch, defineAsyncComponent } from 'vue'
 import { apiMode } from '@/services/api.js'
 import { useSession } from '@/composables/useSession.js'
+import { hasAuthCallback } from '@/services/authCallback.js'
 const ExploreView = defineAsyncComponent(() => import('@/views/ExploreView.vue'))
 const DiscoverView = defineAsyncComponent(() => import('@/views/DiscoverView.vue'))
 const MyLibraryView = defineAsyncComponent(() => import('@/views/MyLibrary.vue'))
@@ -36,16 +35,18 @@ const BookDetailsView = defineAsyncComponent(() => import('@/views/BookDetailsVi
 const RoomView = defineAsyncComponent(() => import('@/components/reading-rooms/RoomView.vue'))
 const RoomsView = defineAsyncComponent(() => import('@/views/RoomsView.vue'))
 const AdminView = defineAsyncComponent(() => import('@/views/admin/AdminView.vue'))
+const GuestGuideView = defineAsyncComponent(() => import('@/views/guide/GuestGuideView.vue'))
 import { rooms } from "@/mock/data"
 
 const { current, selectedRoom, leaveRoom, requireSignIn } = useNav()
-const { ready, user, isStaff, error: sessionError, refresh } = useSession()
+if (apiMode && hasAuthCallback()) current.value = 'auth'
+const { user, isStaff, refresh } = useSession()
 const protectedRoute = computed(() => ['library', 'profile', 'rooms', 'room', 'groups'].includes(current.value) || current.value.startsWith('admin-'))
-const blocked = computed(() => apiMode && protectedRoute.value && (!ready.value || !user.value || (current.value.startsWith('admin-') && !isStaff.value)))
-watch([ready, current, user, sessionError], () => {
-  if (apiMode && ready.value && protectedRoute.value && !user.value && !sessionError.value) requireSignIn()
-}, { immediate: true })
-if (apiMode) refresh()
+const blocked = computed(() => apiMode && current.value.startsWith('admin-') && user.value && !isStaff.value)
+watch([current, user], () => {
+  if (apiMode && protectedRoute.value && !user.value) requireSignIn()
+}, { immediate: true, flush: 'sync' })
+if (apiMode && !hasAuthCallback()) refresh()
 </script>
 
 <style scoped>

@@ -1,11 +1,9 @@
 """Lean, single-worker exact-route replay. ESP32 owns motors/watchdog/obstacle stop."""
 import asyncio
 import hashlib
-import hmac
 import json
-import secrets
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID, uuid4, uuid5
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field
@@ -16,7 +14,6 @@ from atlas_validation import checkpoint, route_data, validate_route
 from guidance_models import GuidanceTask, ACTIVE, CLAIMED
 from guidance_access import reader, staff, device, enabled, available
 from auth_security import throttle
-from auth_config import get_config
 import atlas_runtime as runtime
 
 router = APIRouter(tags=['Atlas guidance'])
@@ -26,8 +23,7 @@ SEGMENT_TIMEOUT = 60
 CONFIRM_TIMEOUT = 120
 # Temporary delivery/ack state only. No permanent command/sample tables.
 deliveries = {}
-# Display plaintext and physical attestations are short-lived, never stored in DB.
-otp_displays = {}
+# Physical attestations are short-lived, never stored in DB.
 arrivals = {}
 
 def now():
@@ -50,14 +46,6 @@ def current_route(db, task):
 def command_id(task, route, sequence):
     return str(uuid5(UUID(task.session_id), f'{route.id}:{sequence}'))
 
-def otp_digest(task, code):
-    binding = f'atlas-otp:{task.id}:{task.robot_id}:{task.route_id}:{task.route_fingerprint}:{stamp(task.otp_expires_at).isoformat()}:{code}'
-    return hmac.new(get_config().security_secret.encode(), binding.encode(), hashlib.sha256).hexdigest()
-
-def clear_otp(task):
-    task.atlas_otp_hash = None
-    otp_displays.pop(task.id, None)
-
 def public(task, db):
     route = current_route(db, task)
     outbound = db.get(RouteModel, task.route_id)
@@ -72,13 +60,11 @@ def public(task, db):
         current_checkpoint_id=route.destination_checkpoint_id if route else None,
         home_checkpoint_id=robot.home_checkpoint_id if robot else None,
         phase='return' if task.status == 'returning_home' else 'guidance',
-        otp_expires_at=stamp(task.otp_expires_at).isoformat() if task.status == 'awaiting_otp' and task.otp_expires_at else None,
         created_at=stamp(task.created_at).isoformat(), updated_at=stamp(task.updated_at).isoformat())
 
 def fail(db, task, reason, status='failed', preserve_home=False):
     claimed = task.status in CLAIMED
     task.status, task.failure_reason, task.updated_at = status, reason, now()
-    clear_otp(task)
     state = runtime.state(task.robot_id)
     robot = db.get(RobotModel, task.robot_id)
     if claimed:
@@ -124,12 +110,7 @@ def sweep(db):
         state['guidance_task_id'] = task.id
         delivery = deliveries.get(task.id)
         reason = None
-        if task.status == 'awaiting_otp' and (not task.otp_expires_at or now() >= stamp(task.otp_expires_at)):
-            fail(db, task, 'Atlas code expired. Request guidance again.', 'expired', preserve_home=True)
-            continue
-        if task.status == 'awaiting_otp' and (not state['checkpoint_location_verified'] or not state.get('guidance_stopped')):
-            reason = 'Atlas left its confirmed home station before authorization.'
-        elif (now() - stamp(task.created_at)).total_seconds() > 900:
+        if (now() - stamp(task.created_at)).total_seconds() > 900:
             reason = 'Guidance time limit reached; staff must check Atlas.'
         elif time.time() - state.get('guidance_poll_at', 0) > (LEASE_SECONDS if delivery else POLL_TIMEOUT):
             reason = 'Robot connection lost; physical position must be reconfirmed.'
@@ -144,7 +125,6 @@ def sweep(db):
 
 def recover(db):
     deliveries.clear()
-    otp_displays.clear()
     arrivals.clear()
     for task in active(db):
         fail(db, task, 'Server restarted; replay will not resume automatically.')
@@ -164,14 +144,10 @@ def select_next(db, robot):
     task = db.query(GuidanceTask).filter_by(robot_id=robot.id, status='waiting_for_atlas').order_by(GuidanceTask.created_at, GuidanceTask.id).with_for_update().first()
     if not task or not check_task(db, task):
         return
-    code = f'{secrets.randbelow(1000000):06d}'
-    task.otp_expires_at, task.otp_attempts = now() + timedelta(seconds=60), 0
-    task.atlas_otp_hash = otp_digest(task, code)
-    task.status, task.updated_at = 'awaiting_otp', now()
-    robot.guidance_state = 'awaiting_otp'
+    task.session_id, task.status, task.updated_at = str(uuid4()), 'queued', now()
+    robot.guidance_state = 'guiding'
     state['guidance_task_id'] = task.id
     db.commit()
-    otp_displays[task.id] = code
 
 async def watchdog():
     while True:
@@ -211,9 +187,6 @@ class ReplayResult(StrictModel):
     control_request_id: UUID | None = None
     movement: Movement | None = None
     error: str | None = Field(default=None, max_length=300)
-
-class AtlasVerification(StrictModel):
-    atlas_otp: str = Field(pattern=r'^\d{6}$')
 
 class HomeConfiguration(StrictModel):
     home_checkpoint_id: UUID
@@ -327,35 +300,6 @@ def request_guidance(body: GuidanceRequest, request: Request, context=Depends(re
                 return public(task, db)
         raise HTTPException(409, 'Guidance requires a configured home and active recorded routes both to this shelf and back home.')
 
-@router.post('/guidance-requests/{task_id}/verify')
-def verify_atlas(task_id: UUID, body: AtlasVerification, request: Request, context=Depends(reader), db=Depends(get_db)):
-    throttle(db, request, 'atlas-otp', context.email)
-    with runtime.lock:
-        sweep(db)
-        task = db.query(GuidanceTask).filter_by(id=str(task_id), user_id=context.user_id).with_for_update().first()
-        if not task:
-            raise HTTPException(404, 'Guidance request not found.')
-        robot = db.query(RobotModel).filter_by(id=task.robot_id).with_for_update().one()
-        state = runtime.state(robot.id)
-        if (task.status != 'awaiting_otp' or not task.atlas_otp_hash or task.verified_at or
-            not task.otp_expires_at or now() >= stamp(task.otp_expires_at) or not active(db, robot.id) or active(db, robot.id).id != task.id or
-            robot.guidance_state != 'awaiting_otp' or robot.residing_checkpoint_id != robot.home_checkpoint_id or
-            not state['checkpoint_location_verified'] or not state.get('guidance_stopped') or
-            time.time() - state.get('guidance_poll_at', 0) > POLL_TIMEOUT):
-            raise HTTPException(409, 'Atlas authorization is no longer available. Request guidance again.')
-        if not hmac.compare_digest(task.atlas_otp_hash, otp_digest(task, body.atlas_otp)):
-            task.otp_attempts += 1
-            if task.otp_attempts >= 5:
-                fail(db, task, 'Atlas code attempt limit reached.', 'expired', preserve_home=True)
-            else:
-                db.commit()
-            raise HTTPException(400, 'Invalid Atlas code.')
-        task.verified_at, task.session_id, task.status, task.updated_at = now(), str(uuid4()), 'queued', now()
-        clear_otp(task)
-        robot.guidance_state = 'guiding'
-        db.commit()
-        return public(task, db)
-
 @router.get('/guidance-requests')
 def my_tasks(context=Depends(reader), db=Depends(get_db)):
     with runtime.lock:
@@ -378,7 +322,7 @@ def cancel(task_id: UUID, context=Depends(reader), db=Depends(get_db)):
         if not task or task.user_id != context.user_id:
             raise HTTPException(404, 'Guidance request not found.')
         # Once offered to firmware, it may have started even if the ack was lost.
-        if task.status not in ('waiting_for_atlas', 'awaiting_otp', 'queued'):
+        if task.status not in ('waiting_for_atlas', 'queued'):
             raise HTTPException(409, 'Robot may already be moving. Ask staff to stop it.')
         fail(db, task, 'Cancelled by reader before delivery.', 'cancelled', preserve_home=True)
         return public(task, db)
@@ -413,8 +357,8 @@ def confirm_position(robot_id: str, body: PositionConfirmation, context=Depends(
             raise HTTPException(409, 'Confirm actual placement only while compatible firmware reports stopped and no recording is active.')
         task = active(db, robot_id)
         if task:
-            if task.status in ('awaiting_otp', 'queued'):
-                raise HTTPException(409, 'Cancel the station authorization before changing its checkpoint.')
+            if task.status == 'queued':
+                raise HTTPException(409, 'Cancel the queued request before changing its checkpoint.')
             route = check_task(db, task)
             if not route or str(body.task_id) != task.id or task.progress_index != len(route.route_segments) or str(body.checkpoint_id) != route.destination_checkpoint_id:
                 raise HTTPException(409, 'Only the completed replay destination can be confirmed for this task.')
@@ -462,31 +406,23 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
         robot = db.query(RobotModel).filter_by(id=robot_id).with_for_update().first()
         if not robot:
             raise HTTPException(404, 'Atlas not found.')
-        if not stopped and robot.guidance_state in ('at_home', 'awaiting_otp'):
+        if not stopped and robot.guidance_state == 'at_home':
             state['checkpoint_location_verified'] = False
             robot.guidance_state = 'unknown'
             pending = active(db, robot_id)
             if pending:
-                fail(db, pending, 'Atlas left its station before authorization.')
+                fail(db, pending, 'Atlas left its station before dispatch.')
             db.commit()
         select_next(db, robot)
         task = active(db, robot_id)
         stop_message = {'command': 'stop' if protocol == 2 else 'idle', 'execute': protocol == 2,
-            'protocol': protocol, 'clear_otp': True, 'robot_state': robot.guidance_state}
+            'protocol': protocol, 'robot_state': robot.guidance_state}
         if not task:
             if not stopped:
                 state['checkpoint_location_verified'] = False
             return stop_message
-        if task.status == 'awaiting_otp':
-            display = otp_displays.get(task.id)
-            if not display:
-                fail(db, task, 'OTP display state was lost.', 'expired', preserve_home=True)
-                return stop_message
-            return dict(protocol=protocol, command='display_otp', execute=False, request_id=task.id,
-                command_id=str(uuid5(UUID(task.id), str(task.otp_expires_at))), atlas_otp=display,
-                otp_expires_at=stamp(task.otp_expires_at).isoformat(), robot_state='awaiting_otp', stop=True)
-        if not task.session_id or not task.verified_at:
-            fail(db, task, 'Guidance session has no consumed Atlas authorization.')
+        if not task.session_id:
+            fail(db, task, 'Guidance session identity is missing.')
             return stop_message
         route = check_task(db, task)
         if not route:
@@ -519,7 +455,7 @@ def replay_poll(robot_id: str, stopped: bool, protocol: int, db=Depends(get_db))
         if delivery['status'] == 'paused' and not stopped:
             fail(db, task, 'Firmware reports motion after acknowledged pause.')
             return stop_message
-        return dict(protocol=protocol, command='replay_segment', clear_otp=True, task_id=task.id, session_id=task.session_id,
+        return dict(protocol=protocol, command='replay_segment', task_id=task.id, session_id=task.session_id,
             phase='return' if task.status == 'returning_home' else 'guidance', route_id=route.id,
             command_id=command_id(task, route, segment['sequence']), sequence=segment['sequence'],
             movement=segment['movement'], execute=delivery['status'] == 'offered',
@@ -632,7 +568,6 @@ def report_arrival(robot_id: str, body: ArrivalReport, db=Depends(get_db)):
         if task.status == 'returning_home':
             task.status, robot.guidance_state = 'completed', 'at_home'
             state['guidance_task_id'] = None
-            clear_otp(task)
         else:
             task.status, robot.guidance_state, task.progress_index = 'returning_home', 'returning_home', 0
             state['checkpoint_location_verified'] = False

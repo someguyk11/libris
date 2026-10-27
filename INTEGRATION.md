@@ -47,7 +47,7 @@ Open `/#/admin/shelves`, `/#/admin/books`, and `/#/admin/atlas`. API errors are 
 | Email/password + OTP + sessions | `/auth/*`; see [AUTH.md](backend/AUTH.md) | Signup, numeric OTP/resend, login, actual logout, session identity and email-code password recovery. Protected routes bootstrap the session; admin requires the server UUID allowlist. Requires Supabase Auth and production custom SMTP; no Google/OAuth implementation. |
 | Reader catalogue and guidance | `/book/search/{query}`, `/guidance-requests` | Discover searches actual backend books; book details offer explicit guidance and owned task status/cancellation. Search alone never dispatches Atlas. |
 | Shelf destination and task monitor | `/shelves/{id}/destination`, `/robots/{id}/guidance-tasks`, `/checkpoint-confirmation`, `/guidance/stop` | Existing shelf editor maps a checkpoint; Atlas Monitor provides physical start/arrival confirmation, task state and emergency stop. |
-| Atlas OTP and return protocol v2 | `/guidance-requests/{id}/verify`, `/robot/{id}/guidance/command`, `/guidance/result`, `/guidance/arrival` | Device-only six-digit display code (60 seconds, five attempts), owned atomic authorization, FIFO queue, acknowledged outbound/return replay, physical checkpoint attestation and contextual ESP32 arrival. Compatible firmware and physical validation remain required. No checkout verification. |
+| Atlas direct guidance and return protocol v2 | `/guidance-requests`, `/robot/{id}/guidance/command`, `/guidance/result`, `/guidance/arrival` | No Atlas code step. Owned requests dispatch when a keyed robot is safely ready; FIFO queue, acknowledged outbound/return replay, physical checkpoint attestation and contextual ESP32 arrival remain. Compatible firmware and physical validation remain required. |
 
 Shelf IDs are database-generated integers. LiBot has no shelf category/aisle/row columns, so API mode omits those demo fields. Floor and section are supported. Existing `path_id` values are preserved when editing but not presented as functional navigation routes.
 
@@ -94,7 +94,7 @@ Created:
 - `backend/atlas_runtime.py`, `backend/atlas_validation.py`, `backend/checkpoints.py`, `backend/recordings.py`, `backend/SCHEMA_GAPS.md`, `backend/migrations/20261018_atlas_v1_encoder.sql` — finalized encoder recording architecture.
 - `backend/auth.py`, `backend/auth_config.py`, `backend/auth_models.py`, `backend/auth_provider.py`, `backend/auth_security.py`, `backend/auth_migrate.py`, `backend/test_auth.py`, `backend/AUTH.md`, `backend/migrations/20261019_auth_v1.sql` — Supabase OTP authentication and private server-side sessions.
 - `backend/guidance.py`, `backend/guidance_access.py`, `backend/guidance_models.py`, `backend/guidance_migrate.py`, `backend/test_guidance.py`, `backend/GUIDANCE.md`, `backend/migrations/20261019_guidance_v1.sql` — narrow recorded-route guidance and security boundary.
-- `backend/migrations/20261019_atlas_otp_v2.sql` — additive home/state, request-bound Atlas OTP/session and return-route upgrade; no checkout verification.
+- `backend/migrations/20261027_guidance_direct_start.sql` — retires the historical Atlas code step while preserving sessions, home/state and return routes. The earlier v2 migration remains as migration history only.
 - `src/components/book/ReaderGuidance.vue`, `src/views/admin/components/GuidanceMonitor.vue` — compact reader and staff task controls.
 - `.env.example`, `INTEGRATION.md`.
 - `src/services/api.js`, `src/services/backendData.js`.

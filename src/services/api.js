@@ -33,6 +33,8 @@ export async function request(path, options = {}) {
       const detail = Array.isArray(data?.detail) ? data.detail.map(item => `${item.loc?.slice(1).join('.')}: ${item.msg}`).join('; ') : data?.detail
       const error = new Error(typeof detail === 'string' ? detail : `Backend request failed (${response.status}).`)
       error.status = response.status
+      const retry = response.headers.get('Retry-After')
+      error.retryAfter = retry && /^\d+$/.test(retry) ? Number(retry) : retry ? Math.max(1, Math.ceil((Date.parse(retry) - Date.now()) / 1000)) || 60 : null
       throw error
     }
     if (response.status !== 204 && (data === null || typeof data !== 'object')) throw new Error('Backend returned an empty or invalid response.')
@@ -57,7 +59,9 @@ async function sessionRequest(path, options) {
 export const authApi = {
   session: () => sessionRequest('/auth/session'),
   login: (email, password) => sessionRequest('/auth/login', json('POST', { email, password })),
-  signup: (email, password) => request('/auth/signup', json('POST', { email, password })),
+  signup: (email, password, profile = {}) => request('/auth/signup', json('POST', { email, password, ...profile })),
+  callback: body => sessionRequest('/auth/callback', json('POST', body)),
+  updateProfile: profile => sessionRequest('/auth/profile', json('PATCH', profile)),
   verify: (email, token) => sessionRequest('/auth/otp/verify', json('POST', { email, token })),
   resend: email => request('/auth/otp/resend', json('POST', { email })),
   forgotPassword: email => request('/auth/password/forgot', json('POST', { email })),
@@ -67,7 +71,6 @@ export const authApi = {
 }
 export const backend = {
   requestGuidance: bookId => request('/guidance-requests', json('POST', { book_id: bookId })),
-  verifyGuidance: (id, atlasOtp) => request(`/guidance-requests/${encodeURIComponent(id)}/verify`, json('POST', { atlas_otp: atlasOtp })),
   configureHome: (id, checkpointId) => request(`/robots/${encodeURIComponent(id)}/home`, json('PATCH', { home_checkpoint_id: checkpointId })),
   myGuidance: () => request('/guidance-requests'),
   guidance: id => request(`/guidance-requests/${encodeURIComponent(id)}`),

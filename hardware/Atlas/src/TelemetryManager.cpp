@@ -73,7 +73,16 @@ void TelemetryManager::worker() {
             if (static_cast<int32_t>(now - pollAt) >= 0) {
                 BackendClient::Command c;
                 const uint32_t link = network_.generation();
-                bool ok = backend_.poll(c);
+                bool ok = false;
+                if (AtlasConfig::UseSupabaseCommands && supabase_.configured()) {
+                    // Supabase-backed command source (simulation): poll the
+                    // robot_commands table instead of the render.com endpoint.
+                    SupabaseClient::CommandRow row;
+                    ok = supabase_.poll(row);
+                    if (ok) c = rowToCommand(row);
+                } else {
+                    ok = backend_.poll(c);
+                }
                 // Manual executable stop/recovery wins over guidance. Status is not stop.
                 if (ok && !c.execute && !c.recoveryId[0] && !c.factoryReset && !c.reconfigure) {
                     BackendClient::Command guidance;
@@ -100,7 +109,7 @@ void TelemetryManager::worker() {
                     }
                     xQueueOverwrite(commands_, &c);
                     backoff = AtlasConfig::BackendRetryInitialMs;
-                    pollAt = now + AtlasConfig::CommandPollIntervalMs;
+                    pollAt = now + (AtlasConfig::UseSupabaseCommands ? AtlasConfig::SupabasePollIntervalMs : AtlasConfig::CommandPollIntervalMs);
                     if (c.factoryReset || c.reconfigure) {
                         healthy_.store(false);
                         epoch = generation_.fetch_add(1) + 1;
@@ -162,6 +171,28 @@ BackendClient::Sensors TelemetryManager::capture(uint32_t nowMs) const {
     return s;
 }
 
+BackendClient::Command TelemetryManager::rowToCommand(const SupabaseClient::CommandRow& row) {
+    BackendClient::Command c;
+    c.execute = true;
+    c.baseline = false;
+    c.fetchedAtMs = row.fetchedAtMs;
+    strlcpy(c.id, row.id, sizeof(c.id));
+    if (!strcmp(row.kind, "forward")) c.kind = BackendClient::CommandKind::Forward;
+    else if (!strcmp(row.kind, "backward")) c.kind = BackendClient::CommandKind::Backward;
+    else if (!strcmp(row.kind, "left")) c.kind = BackendClient::CommandKind::Left;
+    else if (!strcmp(row.kind, "right")) c.kind = BackendClient::CommandKind::Right;
+    else if (!strcmp(row.kind, "stop")) c.kind = BackendClient::CommandKind::Stop;
+    else c.kind = BackendClient::CommandKind::Stop; // unknown kind -> safe stop
+    // Replay rows carry left/right encoder ticks; forward/backward rows carry
+    // a distance (cm) which overrides BackendStepCm when set.
+    if (!strcmp(row.kind, "replay")) {
+        c.leftTicks = row.ticksLeft;
+        c.rightTicks = row.ticksRight;
+        c.kind = BackendClient::CommandKind::Forward; // replayTicks uses direction from kind
+    }
+    return c;
+}
+
 BackendClient::Result TelemetryManager::result(const BackendClient::Command& c,
     BackendClient::ResultStatus status, uint32_t nowMs) const {
     BackendClient::Result r;
@@ -212,6 +243,10 @@ void TelemetryManager::finish(bool completed, const char* error, uint32_t nowMs)
     if (ran) measure(r, active_.kind, leftStart_, rightStart_);
     if (error) strlcpy(r.error, error, sizeof(r.error));
     enqueue(r);
+    // Mark Supabase command row status (simulation backend).
+    if (AtlasConfig::UseSupabaseCommands && supabase_.configured() && active_.id[0]) {
+        supabase_.markStatus(active_.id, completed ? "executed" : "failed");
+    }
     phase_ = Phase::Idle;
     controlId_[0] = 0;
     activeMovement_.store(false);

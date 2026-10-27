@@ -30,8 +30,8 @@ AtlasFault SafetyController::inspectSensors(uint32_t nowMs, bool requireAll) {
             if (required) invalid = true;
             continue;
         }
-        if (reading.distanceCm <= ObstacleStopCm[i]) blocked_[i] = true;
-        else if (reading.distanceCm >= ObstacleStopCm[i] + ObstacleHysteresisCm) blocked_[i] = false;
+        if (reading.distanceCm <= ObstacleStopCm[i] && ObstacleAvoidanceEnabled) blocked_[i] = true;
+        else if (reading.distanceCm >= ObstacleStopCm[i] + ObstacleHysteresisCm && ObstacleAvoidanceEnabled) blocked_[i] = false;
         if (required && blocked_[i]) obstructed = true;
     }
     // Invalid data takes precedence over interpreting an old obstacle state.

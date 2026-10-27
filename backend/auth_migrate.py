@@ -3,6 +3,7 @@ from sqlalchemy import text
 from auth_models import AuthBase
 
 VERSION = '20261019_auth_v1'
+PROFILE_VERSION = '20261027_auth_profiles_v2'
 
 
 def upgrade_auth(engine):
@@ -18,3 +19,4 @@ def upgrade_auth(engine):
                 connection.execute(text(f'REVOKE ALL ON TABLE {name} FROM PUBLIC, anon, authenticated'))
         connection.execute(text('CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(100) PRIMARY KEY)'))
         connection.execute(text('INSERT INTO schema_migrations(version) VALUES (:version) ON CONFLICT DO NOTHING'), {'version': VERSION})
+        connection.execute(text('INSERT INTO schema_migrations(version) VALUES (:version) ON CONFLICT DO NOTHING'), {'version': PROFILE_VERSION})

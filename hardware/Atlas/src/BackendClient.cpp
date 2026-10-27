@@ -197,9 +197,6 @@ bool BackendClient::pollGuidance(Command& command, bool stopped) {
             arrival["stopped"] = true; arrival["confirmation_method"] = "operator_attestation";
             if (!postDocument("/guidance/arrival", arrival, true) || responseDocument_["acknowledged"] != true) return false;
         }
-    } else if (!strcmp(name, "display_otp")) {
-        // There is no configured display. This message never authorizes motion.
-        if (data["execute"].as<bool>() || data["stop"] != true) return false;
     } else if (!strcmp(name, "replay_segment")) {
         const char* id = data["command_id"], *task = data["task_id"], *session = data["session_id"], *route = data["route_id"];
         if (!uuid(id) || !uuid(task) || !uuid(session) || !uuid(route) ||

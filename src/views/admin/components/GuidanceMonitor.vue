@@ -9,7 +9,6 @@
       <label>Home station<select v-model="homeId" required><option value="">Select home checkpoint</option><option v-for="point in points" :key="point.id" :value="point.id">{{ point.name }}</option></select></label>
       <AppButton variant="secondary" :disabled="pending || !homeId">Configure home station</AppButton>
     </form>
-    <p v-if="active?.status === 'awaiting_otp'" class="admin-muted">Code displayed only on Atlas. The requesting reader must enter it on their own account.</p>
     <p v-if="active?.awaiting_confirmation">{{ active.phase === 'return' ? 'Return replay finished. Check Atlas is stopped at home.' : 'Outbound replay finished. Check Atlas is stopped at the shelf.' }} Attestation alone does not complete arrival: the ESP32 must also report the matching session.</p>
     <form class="admin-form" @submit.prevent="confirm">
       <label>Actual checkpoint<select v-model="checkpointId" :disabled="Boolean(active)"><option value="">Select physical location</option><option v-for="point in points" :key="point.id" :value="point.id">{{ point.name }}</option></select></label>
@@ -27,7 +26,7 @@ import AppButton from '@/components/common/AppButton.vue'
 import { backend, authApi } from '@/services/api.js'
 const props = defineProps({ robotId: { type: String, required: true } })
 const history = ref([]), points = ref([]), checkpointId = ref(''), homeId = ref(''), confirmed = ref(false), pending = ref(false), error = ref(''), message = ref('')
-const active = computed(() => history.value.find(task => ['awaiting_otp', 'queued', 'awaiting_robot', 'running', 'returning_home'].includes(task.status)))
+const active = computed(() => history.value.find(task => ['queued', 'awaiting_robot', 'running', 'returning_home'].includes(task.status)))
 const waiting = computed(() => history.value.filter(task => task.status === 'waiting_for_atlas').length)
 watch([checkpointId, () => active.value?.id, () => active.value?.awaiting_confirmation], () => { confirmed.value = false })
 let timer, disposed = false

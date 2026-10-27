@@ -5,10 +5,12 @@
 #include "Navigation.h"
 #include "TelemetryManager.h"
 #include "ImuManager.h"
+#include "PcfManager.h"
 
 MotionController motion;
 SensorManager sensors;
 ImuManager imu;
+PcfManager pcf;
 SafetyController safety(motion, sensors);
 CheckpointManager checkpoints;
 Routes routes(motion, sensors, checkpoints);
@@ -80,6 +82,11 @@ void diagnostics(uint32_t nowMs) {
         snprintf(line, sizeof(line), "imu diagnostic valid=%u error=%u age=%lu ms (not a navigation/safety input)\n",
             static_cast<unsigned>(value.valid), static_cast<unsigned>(value.error),
             static_cast<unsigned long>(nowMs - value.timestampMs));
+    } else if (page == AtlasConfig::SensorCount + 4) {
+        const auto value = pcf.state(nowMs);
+        snprintf(line, sizeof(line), "pcf pins=0x%04X valid=%u error=%u interval=%ums\n",
+            static_cast<unsigned>(value.pins), static_cast<unsigned>(value.valid),
+            static_cast<unsigned>(value.error), static_cast<unsigned>(AtlasConfig::PcfReadIntervalMs));
     } else {
         const uint8_t index = page - 3;
         const auto reading = sensors.reading(static_cast<AtlasConfig::SensorId>(index), nowMs);
@@ -88,7 +95,7 @@ void diagnostics(uint32_t nowMs) {
             static_cast<unsigned>(reading.error), static_cast<unsigned>(reading.consecutiveFailures),
             static_cast<unsigned>(reading.faulted));
     }
-    page = (page + 1) % (AtlasConfig::SensorCount + 4);
+    page = (page + 1) % (AtlasConfig::SensorCount + 5);
     logLine(line);
 }
 
@@ -97,6 +104,7 @@ void setup() {
     motion.begin();
     sensors.begin();
     const bool imuReady = imu.begin();
+    const bool pcfReady = pcf.begin();
     safety.begin(millis());
     navigation.begin(millis());
     const bool networkWorkerReady = telemetry.begin();
@@ -105,6 +113,7 @@ void setup() {
         Serial.println("Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
         if (!networkWorkerReady) Serial.println("Network worker unavailable; backend movement disabled.");
         if (!imuReady) Serial.println("IMU diagnostics unavailable: check explicit bus configuration.");
+        if (!pcfReady) Serial.println("PCF expander unavailable: check bus configuration.");
         if (!BackendClient::configured()) Serial.println("Backend disabled: provision private device key and trusted TLS CA.");
         const char* error = AtlasConfig::pinConfigurationError();
         if (error) Serial.println(error);
@@ -125,6 +134,7 @@ void loop() {
     // Check loop latency BEFORE accepting a newly captured sensor reading.
     safety.update(millis());
     sensors.update(millis());
+    pcf.update(millis());
     safety.update(millis());
     handleTestInput();
     safety.update(millis());

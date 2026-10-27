@@ -21,6 +21,17 @@
   # - Request body
   # - Response headers (including Set-Cookie)
 
+[[redirects]]
+  # Guest deep links use the existing Vue entry point; API proxy stays above.
+  from = "/guide"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/guide/*"
+  to = "/index.html"
+  status = 200
+
 [[headers]]
   # Security headers for all responses
   for = "/*"

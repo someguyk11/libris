@@ -48,6 +48,7 @@ class LibrisAPI(FastAPI):
             allow_credentials=True,
             allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
             allow_headers=['Content-Type', 'X-CSRF-Token'],
+            expose_headers=['Retry-After'],
         )
 
 

@@ -44,7 +44,7 @@ One worker is required. A process restart loses unsaved recordings and delivery 
 | `last_verified_at` | Field exists but is not set merely by activation; a genuine physical verification workflow has not been implemented. |
 | Replay | Exact-route guidance task dispatch and acknowledged segment progression now exist; see [GUIDANCE.md](GUIDANCE.md). Firmware encoder-target control and physical safety testing remain required. Route activation alone never starts replay. |
 | Operator workflow UI | Guidance start/arrival checkpoint confirmation and emergency stop are connected in Atlas Monitor. Dedicated recording controls and checkpoint CRUD screens remain to be connected to the implemented APIs. |
-| Security | Supabase email OTP/cookie sessions exist. Operational APIs always require trusted staff UUID allowlisting or robot-bound device credentials, even when guidance is disabled. Guidance additionally requires the physical Atlas-displayed code (60 seconds, five attempts), consumed against the owned request before movement. Multi-library roles/tenant isolation remain absent; use a trusted single-installation test environment. See [AUTH.md](AUTH.md) and [GUIDANCE.md](GUIDANCE.md). |
+| Security | Supabase email OTP/cookie sessions exist. Operational APIs always require trusted staff UUID allowlisting or robot-bound device credentials, even when guidance is disabled. Atlas codes are retired; owned requests dispatch only after device readiness and physical-home checks. Multi-library roles/tenant isolation remain absent; use a trusted single-installation test environment. See [AUTH.md](AUTH.md) and [GUIDANCE.md](GUIDANCE.md). |
 
 ## Older UI requests outside the finalized V1 schema
 

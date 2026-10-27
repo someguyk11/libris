@@ -3,6 +3,7 @@
 #include "BackendClient.h"
 #include "NetworkManager.h"
 #include "Navigation.h"
+#include "SupabaseClient.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <atomic>
@@ -25,6 +26,7 @@ private:
     void worker();
     void command(const BackendClient::Command& command, uint32_t nowMs);
     bool fresh(uint32_t nowMs) const;
+    BackendClient::Command rowToCommand(const SupabaseClient::CommandRow& row);
     BackendClient::Sensors capture(uint32_t nowMs) const;
     BackendClient::Result result(const BackendClient::Command& command,
         BackendClient::ResultStatus status, uint32_t nowMs) const;
@@ -41,6 +43,7 @@ private:
     Navigation& navigation_;
     Atlas::NetworkManager network_;
     BackendClient backend_;
+    SupabaseClient supabase_;
     QueueHandle_t commands_ = nullptr, results_ = nullptr, acks_ = nullptr, samples_ = nullptr;
     std::atomic<bool> healthy_{false}, deliveryFault_{false}, activeMovement_{false};
     std::atomic<bool> recoveryHold_{false}, recoveryApproved_{false};

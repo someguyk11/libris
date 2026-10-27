@@ -27,11 +27,11 @@
       </header>
 
       <section v-if="apiMode" class="discover-content discover-section book-shelf" aria-label="Live catalogue search">
-        <SectionHeader title="Library catalogue" subtitle="Search registered books. Open a book to request Atlas shelf guidance." />
+        <SectionHeader title="Library catalogue" subtitle="Find a book and see where it belongs." />
         <p v-if="catalogueLoading" role="status">Searching the catalogue…</p>
-        <p v-if="catalogueError" role="alert">{{ catalogueError }}</p>
+        <p v-if="catalogueError" role="alert">{{ catalogueError }} <button class="admin-text-button" @click="loadCatalogue">Try again</button></p>
         <ScrollRail gap=".85rem"><BookCard v-for="book in catalogue" :key="book.id" v-bind="book" :show-bookmark="false" @click="openBook(book)" /></ScrollRail>
-        <p v-if="!catalogueLoading && searchQuery && !catalogue.length && !catalogueError">No registered books match your search.</p>
+        <p v-if="!catalogueLoading && !catalogue.length && !catalogueError" role="status">{{ searchQuery ? 'No books match your search. Try another title or author.' : 'No books are in the catalogue yet. Please check back soon.' }}</p>
         <button v-if="catalogueHasMore" class="admin-text-button" :disabled="catalogueLoading" @click="loadMoreCatalogue">{{ catalogueLoading ? 'Loading…' : 'Load more books' }}</button>
       </section>
       <div v-else class="discover-content">

@@ -14,6 +14,9 @@
 #ifndef ATLAS_TLS_CA
 #define ATLAS_TLS_CA ""
 #endif
+#ifndef SUPABASE_ANON_KEY
+#define SUPABASE_ANON_KEY ""
+#endif
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Atlas V1 requires the classic ESP32 (DevKit V1), not another ESP32 variant."
@@ -73,6 +76,24 @@ constexpr uint16_t ImuBusTimeoutMs = 10;
 constexpr uint32_t ImuSampleIntervalMs = 20;
 constexpr uint32_t ImuMaximumAgeMs = 200;
 
+// PCF8574 / PCF8575 I2C port expander digital inputs (16 pins total).
+// PCF8575  = single 16-bit device, read as 2 bytes (P0-P7 then P8-P15).
+// Pcf8574  = single 8-bit device (P0-P7). DualPcf8574 = two 8-bit devices.
+// Defaults to None: no PCF hardware present; no PCF I2C activity.
+enum class PcfVariant : uint8_t { None, Pcf8574, Pcf8575, DualPcf8574 };
+constexpr PcfVariant PcfHardware = PcfVariant::None;
+// 7-bit I2C address. PCF8574/PCF8575 base is 0x20; A0-A2 strap sets low 3 bits.
+constexpr uint8_t PcfAddress = 0x20;
+constexpr uint8_t PcfAddressB = 0x21; // second device address for DualPcf8574
+constexpr int PcfSdaPin = UnconfiguredPin;
+constexpr int PcfSclPin = UnconfiguredPin;
+constexpr uint32_t PcfBusHz = 100000;
+constexpr uint32_t PcfReadIntervalMs = 50;
+// PCF port pins are quasi-bidirectional inputs with internal pull-ups.
+// Confirm external pull-ups or active drive match the PCF electrical interface
+// before enabling GPIO.
+constexpr bool PcfElectricalInterfaceConfirmed = false;
+
 constexpr uint32_t PwmFrequencyHz = 20000;
 constexpr uint8_t PwmResolutionBits = 8;
 constexpr uint8_t FirstPwmChannel = 0; // core 2.x: reserves four consecutive channels.
@@ -103,6 +124,10 @@ constexpr float SensorMaxCm = 300.0f;
 constexpr float SoundSpeedCmPerUs = 0.0343f; // tune for measured ambient conditions.
 constexpr float ObstacleStopCm[SensorCount] = {25.0f, 25.0f, 20.0f, 20.0f};
 constexpr float ObstacleHysteresisCm = 5.0f;
+// Master switch for obstacle avoidance. When false the robot does not stop or
+// pause for obstacles; SafetyController never faults AtlasFault::Obstacle and
+// ObstacleAvoidance is a no-op. Set to true to re-enable.
+constexpr bool ObstacleAvoidanceEnabled = false;
 constexpr uint32_t EchoTimeoutUs = 25000;
 constexpr uint32_t TriggerPulseUs = 10; // only bounded microsecond delay in the control path.
 constexpr uint32_t SensorSlotIntervalMs = 60; // one sensor per slot, not four simultaneous pings.
@@ -148,6 +173,16 @@ constexpr char FirmwareVersion[] = "atlas-v1-layer3";
 constexpr const char* DeviceKey = ATLAS_DEVICE_KEY;
 constexpr const char* TlsCa = ATLAS_TLS_CA;
 constexpr float BackendStepCm = 0.0f; // Intentionally UNCONFIGURED; no assumed distance.
+
+// Supabase-backed command source (simulation / alternative to render.com poll).
+// When UseSupabaseCommands is true, the network worker polls the robot_commands
+// table instead of the render.com /command endpoint. Each row maps to one
+// navigation action; after execution the row status is patched to executed/failed.
+constexpr char SupabaseBaseUrl[] = "https://ekehaizdzoaeojyuvbwh.supabase.co";
+constexpr const char* SupabaseAnonKey = SUPABASE_ANON_KEY;
+constexpr char SupabaseRobotId[] = "robot1";
+constexpr uint32_t SupabasePollIntervalMs = 1000;
+constexpr bool UseSupabaseCommands = true;
 constexpr uint32_t CommandPollIntervalMs = 250;
 constexpr uint32_t CommandLeaseMs = 900; // conservative, below backend's 1 s movement TTL.
 constexpr uint32_t MaximumCommandResponseMs = 500;
@@ -229,6 +264,24 @@ inline const char* pinConfigurationError() {
         return "nSLEEP requires an output-capable GPIO";
     if (DriverSleepPin == UnconfiguredPin && !DriverSleepExternallyManaged)
         return "Configure nSLEEP or confirm external management";
+    if (PcfHardware != PcfVariant::None) {
+        if (!PcfElectricalInterfaceConfirmed)
+            return "Confirm PCF electrical interface before enabling";
+        if (!outputPinAllowed(PcfSdaPin) || !outputPinAllowed(PcfSclPin) ||
+            PcfSdaPin == PcfSclPin || PcfSdaPin == UnconfiguredPin ||
+            PcfSclPin == UnconfiguredPin)
+            return "PCF SDA/SCL missing or excluded by DevKit pin policy";
+        if (PcfBusHz == 0 || PcfBusHz > 400000 || PcfReadIntervalMs == 0)
+            return "Invalid PCF bus timing";
+        if (PcfAddress < 0x08 || PcfAddress > 0x77)
+            return "Invalid PCF primary I2C address";
+        if (PcfHardware == PcfVariant::DualPcf8574 &&
+            (PcfAddressB < 0x08 || PcfAddressB > 0x77 || PcfAddressB == PcfAddress))
+            return "Invalid PCF secondary I2C address";
+        if (ImuDiagnosticsEnabled &&
+            (PcfSdaPin == ImuSdaPin || PcfSclPin == ImuSclPin))
+            return "PCF shares I2C pins with IMU diagnostics";
+    }
     return nullptr;
 }
 inline const char* tuningError() {

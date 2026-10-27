@@ -1,9 +1,9 @@
 <template>
   <main ref="root" class="auth-view">
     <section class="auth-art" :style="{ backgroundImage: 'url(' + libraryArt + ')' }">
-      <button class="auth-brand" @click="activeNav = 'explore'">
+      <div class="auth-brand">
         <strong>Libris</strong>
-      </button>
+      </div>
       <div class="auth-art__copy">
         <span>YOUR READING LIFE, IN ONE PLACE</span>
         <h1>Every book opens<br><em>another world.</em></h1>
@@ -17,11 +17,6 @@
 
     <section class="auth-panel">
       <div class="auth-panel__inner">
-        <button class="auth-panel__back" @click="activeNav = 'explore'">
-          <span class="material-symbols-rounded">arrow_back</span>
-          Back to Libris
-        </button>
-
         <div class="auth-mobile-brand">
           <strong>Libris</strong>
         </div>
@@ -39,11 +34,16 @@
 
         <form ref="form" class="auth-form" @submit.prevent="submit">
           <Transition name="field">
-            <label v-if="mode === 'signup' && !apiMode">
+            <label v-if="mode === 'signup' && !otpPhase && !recoveryPhase">
               <span>Your name</span>
-              <div><i class="material-symbols-rounded">person</i><input v-model="name" required autocomplete="name" placeholder="What should we call you?" /></div>
+              <div><i class="material-symbols-rounded">person</i><input v-model="name" :required="!apiMode" maxlength="80" autocomplete="name" placeholder="What should we call you?" /></div>
             </label>
           </Transition>
+
+          <label v-if="mode === 'signup' && !otpPhase && !recoveryPhase">
+            <span>Username <small>(optional)</small></span>
+            <div><i class="material-symbols-rounded">alternate_email</i><input v-model="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,30}" maxlength="30" placeholder="Choose a unique username" /></div>
+          </label>
 
           <label v-if="recoveryPhase !== 'reset'">
             <span>Email address</span>
@@ -54,7 +54,7 @@
             <span>Password</span>
             <div>
               <i class="material-symbols-rounded">lock</i>
-              <input v-model="password" required :type="showPassword ? 'text' : 'password'" :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" :placeholder="apiMode ? 'Your password' : 'At least 8 characters'" :minlength="apiMode ? 1 : 8" maxlength="128" />
+              <input v-model="password" required :type="showPassword ? 'text' : 'password'" :autocomplete="mode === 'login' && !recoveryPhase ? 'current-password' : 'new-password'" :placeholder="mode === 'signup' || recoveryPhase === 'reset' ? 'At least 12 characters' : 'Your password'" :minlength="apiMode ? (mode === 'signup' || recoveryPhase === 'reset' ? 12 : 1) : 8" maxlength="128" />
               <button type="button" aria-label="Show password" @click="showPassword = !showPassword">
                 <span class="material-symbols-rounded">{{ showPassword ? 'visibility_off' : 'visibility' }}</span>
               </button>
@@ -62,21 +62,24 @@
           </label>
 
           <label v-if="otpPhase"><span>Email verification code</span><div><i class="material-symbols-rounded">mark_email_read</i><input v-model="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required placeholder="Code from your email" /></div></label>
-          <button v-if="otpPhase" type="button" :disabled="pending" @click="resend">Resend verification code</button>
+          <button v-if="otpPhase" type="button" :disabled="pending || resendSeconds || retrySeconds" @click="resend">{{ resendSeconds || retrySeconds ? `Resend in ${Math.max(resendSeconds, retrySeconds)}s` : 'Resend verification code' }}</button>
+          <button v-if="otpPhase" type="button" :disabled="pending" @click="changeEmail">Use a different email</button>
 
           <div v-if="mode === 'login' && !recoveryPhase" class="auth-form__options">
             <span>Session expiry is managed securely.</span>
             <button type="button" :disabled="pending" @click="startRecovery">Forgot password?</button>
           </div>
 
-          <button class="auth-submit" type="submit" :disabled="pending">
-            {{ pending ? 'Please wait…' : recoveryPhase === 'reset' ? 'Set new password' : otpPhase ? 'Verify email' : recoveryPhase ? 'Send recovery code' : mode === 'login' ? 'Enter Libris' : 'Create account' }}
+          <button class="auth-submit" type="submit" :disabled="pending || retrySeconds">
+            {{ pending ? 'Please wait…' : retrySeconds ? `Try again in ${retrySeconds}s` : recoveryPhase === 'reset' ? 'Set new password' : otpPhase ? 'Verify email' : recoveryPhase ? 'Send recovery code' : mode === 'login' ? 'Enter Libris' : 'Create account' }}
             <span class="material-symbols-rounded">arrow_forward</span>
           </button>
 
           <p v-if="message" class="auth-message" role="status">{{ message }}</p>
           <p v-if="apiMode && sessionEmail" class="auth-message">Signed in as {{ sessionEmail }} <button type="button" :disabled="pending" @click="logout">Sign out</button></p>
         </form>
+
+        <a class="auth-guest-link" href="#/guide">Continue as guest — Book guidance</a>
 
         <div class="auth-divider"><span>or continue with</span></div>
         <button class="social-button" type="button" disabled>
@@ -103,27 +106,55 @@ import useReducedMotion from "@/composables/useReducedMotion"
 import libraryArt from "@/assets/library.png"
 import { apiMode, authApi } from '@/services/api.js'
 import { useSession } from '@/composables/useSession.js'
+import { takeAuthCallback } from '@/services/authCallback.js'
 
-const { current: activeNav, afterSignIn } = useNav()
+const { current: activeNav, afterSignIn, authMode } = useNav()
 const account = useSession()
 const sessionEmail = computed(() => account.user.value?.email || '')
 const recoveryPhase = ref('')
 const isReducedMotion = useReducedMotion()
 const root = ref(null)
 const form = ref(null)
-const mode = ref("login")
+const mode = ref(authMode.value)
+authMode.value = 'login'
 const name = ref("")
+const username = ref('')
 const email = ref("")
 const password = ref("")
 const showPassword = ref(false)
 const message = ref("")
 const pending = ref(false), otpPhase = ref(false), otp = ref('')
 let entrance = null
+const clock = ref(Date.now()), retryUntil = ref(0), resendUntil = ref(0)
+const retrySeconds = computed(() => Math.max(0, Math.ceil((retryUntil.value - clock.value) / 1000)))
+const resendSeconds = computed(() => Math.max(0, Math.ceil((resendUntil.value - clock.value) / 1000)))
+let ticker
+function failed(cause) {
+  message.value = cause.message
+  if (cause.status === 429) retryUntil.value = Date.now() + (cause.retryAfter || 60) * 1000
+  clock.value = Date.now()
+}
+function sent() { resendUntil.value = Date.now() + 30000; clock.value = Date.now() }
 watch(() => account.session.value?.purpose, purpose => {
   if (purpose === 'recovery') { recoveryPhase.value = 'reset'; otpPhase.value = false }
 }, { immediate: true })
 
-onMounted(() => {
+onMounted(async () => {
+  ticker = setInterval(() => { clock.value = Date.now() }, 1000)
+  const callback = takeAuthCallback()
+  if (apiMode && callback) {
+    pending.value = true
+    try {
+      if (callback.error) { account.accept(null); message.value = callback.error }
+      else {
+        const value = await authApi.callback(callback)
+        account.accept(value)
+        if (value.purpose === 'recovery') { recoveryPhase.value = 'reset'; message.value = 'Email verified. Choose a new password.' }
+        else { afterSignIn(); return }
+      }
+    } catch (cause) { account.accept(null); failed(cause) }
+    finally { pending.value = false }
+  }
   if (account.session.value?.purpose === 'recovery') recoveryPhase.value = 'reset'
   if (isReducedMotion.value) return
   entrance = gsap.timeline({ defaults: { ease: "power3.out" } })
@@ -131,7 +162,7 @@ onMounted(() => {
     .fromTo(".auth-art__copy > *", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: .5, stagger: .08 }, .18)
     .fromTo(".auth-panel__inner", { opacity: 0, x: 14 }, { opacity: 1, x: 0, duration: .55 }, .24)
 })
-onBeforeUnmount(() => entrance?.kill())
+onBeforeUnmount(() => { entrance?.kill(); clearInterval(ticker) })
 
 async function setMode(nextMode) {
   if (pending.value) return
@@ -145,17 +176,17 @@ async function setMode(nextMode) {
   }
 }
 async function submit() {
-  if (pending.value) return
+  if (pending.value || retrySeconds.value) return
   if (apiMode) {
     pending.value = true; message.value = ''
     try {
       if (recoveryPhase.value === 'reset') { await authApi.resetPassword(password.value); account.accept(null); password.value = ''; recoveryPhase.value = ''; message.value = 'Password updated. Sign in with your new password.' }
       else if (otpPhase.value && recoveryPhase.value) { account.accept(await authApi.verifyRecovery(email.value, otp.value)); otp.value = ''; otpPhase.value = false; recoveryPhase.value = 'reset' }
-      else if (recoveryPhase.value) { await authApi.forgotPassword(email.value); otpPhase.value = true; message.value = 'If eligible, a recovery code has been sent. Check your email.' }
+      else if (recoveryPhase.value) { await authApi.forgotPassword(email.value); sent(); otpPhase.value = true; message.value = 'If eligible, a recovery email has been sent. Open its link or enter its code here.' }
       else if (otpPhase.value) { account.accept(await authApi.verify(email.value, otp.value)); password.value = ''; otp.value = ''; afterSignIn() }
-      else if (mode.value === 'signup') { await authApi.signup(email.value, password.value); password.value = ''; otpPhase.value = true; message.value = 'If eligible, a verification code has been sent. Check your email.' }
+      else if (mode.value === 'signup') { await authApi.signup(email.value, password.value, { display_name: name.value, username: username.value }); sent(); password.value = ''; otpPhase.value = true; message.value = 'If eligible, a verification email has been sent. Open its link or enter its code here.' }
       else { account.accept(await authApi.login(email.value, password.value)); password.value = ''; afterSignIn() }
-    } catch (cause) { message.value = cause.message }
+    } catch (cause) { failed(cause) }
     finally { pending.value = false }
     return
   }
@@ -164,9 +195,10 @@ async function submit() {
     : "Your demo account is ready. Welcome to Libris."
 }
 async function resend() {
+  if (pending.value || resendSeconds.value || retrySeconds.value) return
   pending.value = true
-  try { await (recoveryPhase.value ? authApi.forgotPassword(email.value) : authApi.resend(email.value)); message.value = 'If eligible, another verification code has been sent.' }
-  catch (cause) { message.value = cause.message }
+  try { await (recoveryPhase.value ? authApi.forgotPassword(email.value) : authApi.resend(email.value)); sent(); message.value = 'If eligible, another verification email has been sent.' }
+  catch (cause) { failed(cause) }
   finally { pending.value = false }
 }
 async function logout() {
@@ -179,6 +211,7 @@ function startRecovery() {
   if (!apiMode) { message.value = 'Password recovery requires a connected account, not demo mode.'; return }
   recoveryPhase.value = 'email'; otpPhase.value = false; password.value = ''; message.value = 'Enter your account email to request a recovery code.'
 }
+function changeEmail() { otpPhase.value = false; otp.value = ''; message.value = ''; password.value = '' }
 </script>
 
 <style scoped>
@@ -225,6 +258,7 @@ function startRecovery() {
 .auth-form > label > div:focus-within { border-color:rgba(179,136,255,.55); box-shadow:0 0 0 3px rgba(179,136,255,.08); }
 .auth-form i { margin-right:.65rem; color:var(--text-tertiary); font-size:1.05rem; }
 .auth-form input { flex:1; min-width:0; border:0; outline:0; color:var(--text-primary); background:transparent; font:.8rem var(--font-body); }
+.auth-form input:-webkit-autofill, .auth-form input:-webkit-autofill:hover, .auth-form input:-webkit-autofill:focus { -webkit-text-fill-color:var(--text-primary); -webkit-box-shadow:0 0 0 1000px rgba(15,12,24) inset; caret-color:var(--text-primary); transition:background-color 9999s ease-out; }
 .auth-form input::placeholder { color:var(--text-disabled); }
 .auth-form label button { display:grid; place-items:center; border:0; color:var(--text-tertiary); background:transparent; cursor:pointer; }
 .auth-form label button span { font-size:1rem; }
@@ -236,6 +270,9 @@ function startRecovery() {
 .auth-submit:hover { transform:translateY(-1px); box-shadow:0 13px 34px rgba(97,52,170,.34); }
 .auth-submit span { font-size:1rem; }
 .auth-message { padding:.7rem; border:1px solid rgba(126,168,138,.26); border-radius:9px; color:#a8cfb4; background:rgba(126,168,138,.08); font-size:.72rem; text-align:center; }
+.auth-guest-link { display:flex; align-items:center; justify-content:center; min-height:44px; margin-top:1rem; padding:.65rem .8rem; border:1px solid var(--border-soft); border-radius:11px; color:var(--accent); background:rgba(16,13,25,.62); font:600 .76rem/1.5 var(--font-body); text-align:center; text-decoration:none; }
+.auth-guest-link:hover { border-color:var(--accent); }
+.auth-guest-link:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
 .auth-divider { display:flex; align-items:center; gap:.7rem; margin:1.4rem 0; color:var(--text-disabled); font-size:.65rem; }
 .auth-divider::before,.auth-divider::after { content:""; flex:1; height:1px; background:var(--border-subtle); }
 .social-button { display:flex; align-items:center; justify-content:center; gap:.65rem; width:100%; height:2.85rem; border:1px solid var(--border-soft); border-radius:11px; color:var(--text-secondary); background:rgba(16,13,25,.62); font:600 .76rem var(--font-body); cursor:pointer; }

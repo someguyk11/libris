@@ -32,5 +32,6 @@ async function signOut() {
   try { const result = await authApi.logout(); accept(null); return result }
   catch (cause) { if (cause.status === 401) { accept(null); return { signed_out: true, provider_revoked: false } } throw cause }
 }
+async function updateProfile(profile) { const value = await authApi.updateProfile(profile); accept(value); return value }
 if (typeof window !== 'undefined') window.addEventListener('libris:session-expired', () => accept(null))
-export function useSession() { return { session, user, isStaff, ready, error, accept, refresh, signOut } }
+export function useSession() { return { session, user, isStaff, ready, error, accept, refresh, signOut, updateProfile } }

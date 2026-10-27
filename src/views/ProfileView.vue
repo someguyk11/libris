@@ -13,16 +13,18 @@
         </div>
 
         <div class="profile-identity">
-          <div class="profile-initial">{{ apiMode ? account.user.value?.email?.[0]?.toUpperCase() : 'R' }}</div>
+          <div class="profile-initial">{{ (profileName || account.user.value?.email || 'R')[0].toUpperCase() }}</div>
           <template v-if="!editing">
-            <h1>{{ apiMode ? 'Your account' : user.name }}</h1>
-            <p>{{ apiMode ? account.user.value?.email : '@' + user.username }}</p>
-            <button v-if="!apiMode" @click="editing = true">Edit demo profile <span class="material-symbols-rounded">edit</span></button>
+            <h1>{{ profileName || 'Your account' }}</h1>
+            <p>{{ profileUsername ? '@' + profileUsername : account.user.value?.email }}</p>
+            <p v-if="apiMode && profileUsername">{{ account.user.value?.email }}</p>
+            <button @click="startEdit">{{ apiMode ? 'Edit profile' : 'Edit demo profile' }} <span class="material-symbols-rounded">edit</span></button>
           </template>
           <form v-else class="profile-edit" @submit.prevent="saveProfile">
-            <input v-model="draftName" aria-label="Name" />
-            <div><span>@</span><input v-model="draftUsername" aria-label="Username" /></div>
-            <div class="profile-edit__actions"><button type="button" @click="cancelEdit">Cancel</button><button type="submit">Save</button></div>
+            <input v-model="draftName" aria-label="Name" autocomplete="name" maxlength="80" />
+            <div><span>@</span><input v-model="draftUsername" aria-label="Username" autocomplete="username" pattern="[A-Za-z0-9_]{3,30}" maxlength="30" placeholder="Optional username" /></div>
+            <p v-if="profileError" role="alert">{{ profileError }}</p>
+            <div class="profile-edit__actions"><button type="button" :disabled="saving" @click="cancelEdit">Cancel</button><button type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save' }}</button></div>
           </form>
         </div>
 
@@ -100,7 +102,7 @@
           <section v-for="group in settingsGroups" :key="group.label" class="settings-group">
             <p>{{ group.label }}</p>
             <div>
-               <button v-for="item in group.items" :key="item.title" :aria-pressed="item.title === 'Animations' ? animationsEnabled : undefined" @click="item.title === 'Animations' ? setAnimationsEnabled(!animationsEnabled) : showToast(item.title + ' is not connected yet.')">
+               <button v-for="item in group.items" :key="item.title" :aria-pressed="item.title === 'Animations' ? animationsEnabled : undefined" @click="item.title === 'Account Settings' ? startEdit() : item.title === 'Animations' ? setAnimationsEnabled(!animationsEnabled) : showToast(item.title + ' is not connected yet.')">
                 <span class="settings-icon material-symbols-rounded">{{ item.icon }}</span>
                 <span><strong>{{ item.title }}</strong><small>{{ item.description }}</small></span>
                 <i class="material-symbols-rounded">{{ item.title === 'Animations' ? (animationsEnabled ? 'toggle_on' : 'toggle_off') : 'chevron_right' }}</i>
@@ -135,6 +137,9 @@ const settingsOpen = ref(false)
 const editing = ref(false)
 const toast = ref("")
 const user = reactive({ name: "Rohit Sharma", username: "rohitreads" })
+const profileName = computed(() => apiMode ? account.user.value?.display_name || '' : user.name)
+const profileUsername = computed(() => apiMode ? account.user.value?.username || '' : user.username)
+const saving = ref(false), profileError = ref('')
 const draftName = ref(user.name)
 const draftUsername = ref(user.username)
 const stats = [
@@ -187,16 +192,22 @@ function showToast(message) {
   toastTimer = setTimeout(() => { toast.value = "" }, 2200)
 }
 function cancelEdit() {
-  draftName.value = user.name
-  draftUsername.value = user.username
+  draftName.value = profileName.value
+  draftUsername.value = profileUsername.value
+  profileError.value = ''
   editing.value = false
 }
-function saveProfile() {
-  if (!draftName.value.trim() || !draftUsername.value.trim()) return
-  user.name = draftName.value.trim()
-  user.username = draftUsername.value.trim().replace(/^@/, "")
-  editing.value = false
-  showToast("Demo profile updated for this visit")
+function startEdit() { cancelEdit(); settingsOpen.value = false; editing.value = true }
+async function saveProfile() {
+  if (saving.value) return
+  saving.value = true; profileError.value = ''
+  try {
+    if (apiMode) await account.updateProfile({ display_name: draftName.value, username: draftUsername.value })
+    else { user.name = draftName.value.trim(); user.username = draftUsername.value.trim().replace(/^@/, '') }
+    editing.value = false
+    showToast(apiMode ? 'Profile saved' : 'Demo profile updated for this visit')
+  } catch (cause) { profileError.value = cause.message }
+  finally { saving.value = false }
 }
 async function animateState(selector) {
   if (isReducedMotion.value) return
@@ -245,6 +256,7 @@ onUnmounted(() => { entrance?.kill(); stateTween?.kill(); clearTimeout(toastTime
 .profile-edit__actions { display:flex; justify-content:center; gap:.65rem; margin-top:.3rem; }
 .profile-edit__actions button { padding:.45rem .8rem; border:1px solid var(--border-soft); border-radius:8px; color:var(--text-secondary); background:transparent; font:.7rem var(--font-body); }
 .profile-edit__actions button:last-child { border-color:var(--accent); color:var(--accent); }
+.profile-edit > p { margin:.25rem 0; color:var(--text-secondary); font-size:.75rem; }
 .profile-content { padding:1rem 1.5rem 2rem; }
 .profile-section { margin-top:2.2rem; }
 .section-label,.settings-group > p { margin:0 0 .9rem; color:var(--text-secondary); font-size:.68rem; font-weight:600; letter-spacing:.1em; }
