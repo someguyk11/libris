@@ -33,7 +33,7 @@ def upgrade(target_engine=engine):
         # own that outer transaction here, so errors reliably roll back the upgrade.
         sql = SQL_FILE.read_text(encoding='utf-8').replace('\nBEGIN;\n', '\n', 1).strip().removesuffix('COMMIT;')
         with target_engine.begin() as connection:
-            connection.exec_driver_sql(sql)
+            connection.execute(text(sql))
             # Only create missing unrelated tables, never alter existing ones.
             Base.metadata.create_all(bind=connection)
     else:
