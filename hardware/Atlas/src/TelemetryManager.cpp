@@ -2,6 +2,7 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 #include <esp_system.h>
+#include "LocalRouteStore.h"
 
 bool TelemetryManager::begin() {
     if (begun_) return true;
@@ -42,6 +43,12 @@ void TelemetryManager::worker() {
     for (;;) {
         uint32_t now = millis();
         network_.update(now);
+        if (AtlasConfig::LocalDriveEnabled) {
+            LocalRouteStore::workerUpdate(); // jobs issued only under stationary main-loop hold
+            healthy_.store(false);
+            vTaskDelay(max(static_cast<TickType_t>(1), pdMS_TO_TICKS(AtlasConfig::NetworkWorkerTickMs)));
+            continue; // exclusive local owner; no backend/Supabase commands or HTTP
+        }
         if (!network_.connected() || linkGeneration != network_.generation()) {
             if (!baseline || healthy_.load()) epoch = generation_.fetch_add(1) + 1;
             healthy_.store(false);

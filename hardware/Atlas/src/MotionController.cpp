@@ -4,6 +4,10 @@
 using namespace AtlasConfig;
 
 namespace {
+void setDriverSleep(uint8_t level) {
+    for (int pin : DriverSleepPins)
+        if (pin != UnconfiguredPin) digitalWrite(pin, level);
+}
 int motorPin(uint8_t index) {
     const int pins[] = {LeftMotor.in1, LeftMotor.in2, RightMotor.in1, RightMotor.in2};
     return pins[index];
@@ -34,9 +38,11 @@ bool MotionController::begin() {
         state_ = State::Failed;
         return false; // no unknown GPIO is touched.
     }
-    if (DriverSleepPin != UnconfiguredPin) {
-        digitalWrite(DriverSleepPin, LOW);
-        pinMode(DriverSleepPin, OUTPUT);
+    for (int pin : DriverSleepPins) {
+        if (pin == UnconfiguredPin) continue;
+        digitalWrite(pin, LOW);
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
         sleepInitialized_ = true;
     }
     for (uint8_t i = 0; i < 4; ++i) {
@@ -92,14 +98,14 @@ void MotionController::stopOutputs(StopMode mode) {
     if (!ready_ || fault_ == AtlasFault::Pwm || fault_ == AtlasFault::Configuration)
         mode = StopMode::Coast;
     // Remove drive before updating PWM when a hardware disable is available.
-    if (sleepInitialized_ && mode == StopMode::Coast) digitalWrite(DriverSleepPin, LOW);
+    if (sleepInitialized_ && mode == StopMode::Coast) setDriverSleep(LOW);
     bool ok = true;
     const uint32_t level = mode == StopMode::Brake ? (1UL << PwmResolutionBits) - 1 : 0;
     for (uint8_t i = 0; i < 4; ++i)
         if (attached_[i] && !writePwm(i, level)) ok = false;
     // nSLEEP low disables both bridges (coast). Brake requires the driver awake.
     if (sleepInitialized_)
-        digitalWrite(DriverSleepPin, mode == StopMode::Brake && ok ? HIGH : LOW);
+        setDriverSleep(mode == StopMode::Brake && ok ? HIGH : LOW);
     if (!ok) {
         // Detach PWM and force LOW if the core reports a write failure.
         for (uint8_t i = 0; i < 4; ++i) {
@@ -260,5 +266,5 @@ void MotionController::update(uint32_t nowMs) {
             (kind_ == Kind::Counterclockwise90 && side == 1);
         if (!drive(side, duties_[side], forward)) { emergencyStop(AtlasFault::Pwm); return; }
     }
-    if (sleepInitialized_) digitalWrite(DriverSleepPin, HIGH);
+    if (sleepInitialized_) setDriverSleep(HIGH);
 }

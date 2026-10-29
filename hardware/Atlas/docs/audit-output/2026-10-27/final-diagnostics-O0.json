@@ -1,0 +1,26 @@
+[
+  {
+    "suite": "pure_diagnostics",
+    "compile_exit": 0,
+    "test_exit": 1,
+    "output": "PASS sensor_boundaries\nPASS history_rollover\nfinite-difference covariance oracle max absolute error 4.22761425e-08\nPASS covariance_finite_difference_oracle\nPASS stopped_cadence_and_duplicate\nPASS full_rotation_rejection\nPASS stale_sequence\nPASS blocked_not_lost\nreverse unequal targets: reasons=0x400 permissions=0\nFAIL reverse_unequal_target_sign: invariant violated\nNaN pre-assessment: sensor=1 nav=1 permissions=5\nFAIL nonfinite_public_assessment: invariant violated\nAUDIT pure: 7/9 scenarios pass\n"
+  },
+  {
+    "suite": "failure_matrix",
+    "compile_exit": 0,
+    "test_exit": 0,
+    "output": "PASS score_collapse\nPASS required_range_missing\nPASS imu_missing\nPASS implausible_encoder_rate\nPASS uncertainty_limit\nPASS encoder_gyro_conflict\nPASS repeated_checkpoint_rejection\nPASS local_critical_fault\nPASS stale_evidence\nPASS invalid_configuration\nPASS signed_history_bias_trend_attempt\nAUDIT matrix: 11/11 scenarios pass\n"
+  },
+  {
+    "suite": "integration_diagnostics",
+    "compile_exit": 0,
+    "test_exit": 1,
+    "output": "coast exact ticks: nav=5 fault=0 record ticks=51/51\nFAIL exact_tick_coast_rejection: r.nav.state()!=Navigation::State::Completed\nPASS lost_reset_denied\nreverse asym ticks: nav=4 reasons=0x400\nFAIL reverse_asymmetric_ticks: r.nav.state()==Navigation::State::Completed\nPASS blocked_retains_trust\npersistent sensor: trust=4 permit=0 reasons=0x4042\nFAIL persistent_sensor_human: d.permissions&AtlasConfidence::Human\nAUDIT integration: 2/5 scenarios pass\n"
+  },
+  {
+    "suite": "telemetry_diagnostics",
+    "compile_exit": 0,
+    "test_exit": 1,
+    "output": "backend coast: status=1 ticks=51/51\nFAIL backend_coast_reject: result.status==BackendClient::ResultStatus::Failed\nPASS lost_failure_copy_reconnect\nAUDIT telemetry: 1/2 scenarios pass\n"
+  }
+]

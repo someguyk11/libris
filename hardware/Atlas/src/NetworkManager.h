@@ -16,6 +16,7 @@ public:
     bool connected() const { return linkUp_.load(); }
     uint32_t generation() const { return generation_.load(); }
     bool configurationPending() const { return configurationRequest_.load() != configurationCompleted_.load(); }
+    bool localDriveAllowed() const { return AtlasConfig::LocalDriveEnabled && !localWifiMode_.load() && !configurationPending(); }
     // Main loop only, AFTER cancelling navigation. Flash writes may stall both cores.
     void approveConfiguration() { configurationApproved_.store(configurationRequest_.load()); }
     bool reconfigure(const char* ssid, const char* password);
@@ -24,7 +25,7 @@ public:
     void reconnect(); // worker only, AFTER main-loop stop approval.
 private:
     struct Profile { char ssid[32]; char password[64]; };
-    enum class Configuration : uint8_t { None, Save, SaveOnly, Forget, Reset };
+    enum class Configuration : uint8_t { None, Save, SaveOnly, Forget, Reset, LocalWifi, LocalDrive };
     bool queueConfiguration(Configuration action, const Profile& profile, uint8_t slot = 0);
     void applyConfiguration();
     bool load(uint8_t slot, Profile& profile);
@@ -58,6 +59,7 @@ private:
     char request_[AtlasConfig::PortalRequestBytes + 1] = {};
     size_t requestLength_ = 0;
     std::atomic<bool> linkUp_{false};
+    std::atomic<bool> localWifiMode_{false};
     std::atomic<uint32_t> generation_{0};
     std::atomic<uint32_t> configurationRequest_{0}, configurationApproved_{0}, configurationCompleted_{0};
     Configuration pendingConfiguration_ = Configuration::None;

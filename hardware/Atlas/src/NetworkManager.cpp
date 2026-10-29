@@ -2,6 +2,9 @@
 #include <EEPROM.h>
 #include <ArduinoJson.h>
 #include "SetupPage.generated.h"
+#include "LocalDrive.h"
+#include "LocalDrivePage.h"
+#include "LocalRouteStore.h"
 
 namespace {
 bool validCredentials(const char* ssid, const char* password) {
@@ -36,10 +39,10 @@ void NetworkManager::begin() {
             generation_.fetch_add(1);
         }
     });
-    WiFi.mode(WIFI_AP_STA);
+    WiFi.mode(AtlasConfig::LocalDriveEnabled ? WIFI_AP : WIFI_AP_STA);
     WiFi.setAutoReconnect(false); // bounded attempts/backoff are owned here.
     startPortal();
-    configTime(0, 0, AtlasConfig::NtpServer); // async SNTP; no getLocalTime wait loop.
+    if (!AtlasConfig::LocalDriveEnabled) configTime(0, 0, AtlasConfig::NtpServer);
 }
 
 bool NetworkManager::load(uint8_t slot, Profile& p) {
@@ -110,7 +113,22 @@ void NetworkManager::applyConfiguration() {
         configurationApproved_.load() != configurationRequest_.load()) return;
     // Main loop has stopped navigation and will not dispatch until completion.
     configurationSucceeded_ = false;
-    if (pendingConfiguration_ == Configuration::Save || pendingConfiguration_ == Configuration::SaveOnly) {
+    if (pendingConfiguration_ == Configuration::LocalWifi) {
+        configurationSucceeded_ = WiFi.mode(WIFI_AP_STA);
+        if (configurationSucceeded_) {
+            localWifiMode_.store(true);
+            autoConnectHeld_ = true; // wait for an explicit Connect, not an automatic profile attempt
+        }
+    } else if (pendingConfiguration_ == Configuration::LocalDrive) {
+        // No scans/reconnects may continue into a drive session. Do not busy-wait.
+        if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return;
+        WiFi.scanDelete(); scanStarted_ = false;
+        if (attempting_) WiFi.disconnect(false, false);
+        attempting_ = false; autoConnectHeld_ = true;
+        localWifiMode_.store(false);
+        configurationSucceeded_ = true;
+        // A successfully connected STA may remain connected. The AP never closes.
+    } else if (pendingConfiguration_ == Configuration::Save || pendingConfiguration_ == Configuration::SaveOnly) {
         configurationSucceeded_ = save(pendingProfile_.ssid, pendingProfile_.password);
         if (configurationSucceeded_ && pendingConfiguration_ == Configuration::Save) {
             startPortal();
@@ -143,9 +161,12 @@ void NetworkManager::applyConfiguration() {
 void NetworkManager::startPortal() {
     if (apActive_) return;
     const IPAddress ip(AtlasConfig::SetupIp);
-    WiFi.mode(WIFI_AP_STA);
+    WiFi.mode(AtlasConfig::LocalDriveEnabled ? WIFI_AP : WIFI_AP_STA);
     WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
-    apActive_ = WiFi.softAP(AtlasConfig::SetupSsid);
+    if (AtlasConfig::LocalDriveEnabled) {
+        apActive_ = WiFi.softAP(AtlasConfig::SetupSsid, AtlasConfig::SetupPassword, 1, 0, 1);
+        Serial.printf("Local drive AP: %s URL: http://192.168.4.1/drive (password in AtlasConfig.h)\n", AtlasConfig::SetupSsid);
+    } else apActive_ = WiFi.softAP(AtlasConfig::SetupSsid);
     if (apActive_) {
         dns_.start(53, "*", ip);
         server_.begin();
@@ -154,12 +175,16 @@ void NetworkManager::startPortal() {
 
 void NetworkManager::update(uint32_t nowMs) {
     applyConfiguration();
+    if (AtlasConfig::LocalDriveEnabled && !localWifiMode_.load()) {
+        if (apActive_) { dns_.processNextRequest(); portal(nowMs); }
+        return; // keep AP alive, no station attempts/scans while driving
+    }
     const bool up = connected();
     if (up) {
         attempting_ = false;
         backoffMs_ = AtlasConfig::WifiRetryInitialMs;
         if (!wasConnected_) connectedAtMs_ = nowMs;
-        if (apActive_ && nowMs - connectedAtMs_ >= AtlasConfig::PortalCloseGraceMs) {
+        if (!AtlasConfig::LocalDriveEnabled && apActive_ && nowMs - connectedAtMs_ >= AtlasConfig::PortalCloseGraceMs) {
             closeClient(); server_.end(); dns_.stop(); WiFi.softAPdisconnect(true);
             WiFi.mode(WIFI_STA);
             apActive_ = false;
@@ -173,7 +198,7 @@ void NetworkManager::update(uint32_t nowMs) {
             retryAtMs_ = nowMs + backoffMs_;
             backoffMs_ = min(backoffMs_ * 2, AtlasConfig::WifiRetryMaximumMs);
         }
-        if (autoReconnect_ && !attempting_ && !autoConnectHeld_ && static_cast<int32_t>(nowMs - retryAtMs_) >= 0) {
+        if (!configurationPending() && autoReconnect_ && !attempting_ && !autoConnectHeld_ && static_cast<int32_t>(nowMs - retryAtMs_) >= 0) {
             bool found = false;
             for (uint8_t i = 0; i < AtlasConfig::WifiProfileCount; ++i) {
                 Profile p{};
@@ -265,7 +290,24 @@ void NetworkManager::handleRequest() {
     JsonDocument doc;
     char body[AtlasConfig::PortalResponseBytes];
     if (strcmp(method, "GET") == 0) {
-        if (strcmp(path, "/status") == 0) {
+        if (AtlasConfig::LocalDriveEnabled && strcmp(path, "/drive") == 0) {
+            reply(200, "text/html; charset=utf-8", LocalDrivePage, sizeof(LocalDrivePage) - 1); return;
+        } else if (AtlasConfig::LocalDriveEnabled && strcmp(path, "/drive/status") == 0) {
+            LocalDrive::status(doc);
+            doc["localMode"] = localWifiMode_.load() ? "wifi" : "drive";
+            doc["modeChanging"] = configurationPending();
+            doc["ready"] = doc["ready"].as<bool>() && localDriveAllowed();
+        } else if (AtlasConfig::LocalDriveEnabled && !strncmp(path, "/drive/route/", 13)) {
+            const char* value = path + 13;
+            if (strlen(value) != 1 || value[0] < '0' || value[0] >= '0' + AtlasConfig::LocalRouteSlots ||
+                !LocalRouteStore::content(value[0] - '0', doc)) {
+                reply(404, "application/json", "{\"error\":\"Route missing, invalid or calibration changed\"}"); return;
+            }
+        } else if (AtlasConfig::LocalDriveEnabled && (!localWifiMode_.load() || configurationPending()) && strcmp(path, "/scan") == 0) {
+            reply(409, "application/json", "{\"error\":\"Scanning disabled during local driving\"}"); return;
+        } else if (strcmp(path, "/status") == 0) {
+            doc["localControlEnabled"] = AtlasConfig::LocalDriveEnabled;
+            doc["localMode"] = localWifiMode_.load() ? "wifi" : "drive";
             doc["connected"] = connected(); doc["wifiConfigured"] = false;
             for (uint8_t i = 0; i < AtlasConfig::WifiProfileCount; ++i) { Profile p{}; if (load(i, p)) doc["wifiConfigured"] = true; }
             doc["apModeActive"] = apActive_; doc["currentSsid"] = WiFi.SSID();
@@ -320,6 +362,34 @@ void NetworkManager::handleRequest() {
         if (!allowed || !host || !type) { reply(403, "application/json", "{\"error\":\"Use the setup portal at its IP address\"}"); return; }
         char* payload = strstr(request_, "\r\n\r\n") + 4;
         if (deserializeJson(doc, payload, DeserializationOption::NestingLimit(3)) || !doc.is<JsonObject>()) { reply(400, "application/json", "{\"error\":\"Invalid JSON\"}"); return; }
+        if (AtlasConfig::LocalDriveEnabled) {
+            if (!strcmp(path, "/drive/command")) {
+                const char* command = doc["command"].as<const char*>();
+                if (!localDriveAllowed() && (!command || (strcmp(command, "stop") && strcmp(command, "emergency") && strcmp(command, "reset") && strcmp(command, "discard")))) {
+                    reply(409, "application/json", "{\"error\":\"Select Drive & replay mode before issuing movement\"}"); return;
+                }
+                if (!LocalDrive::submit(doc)) {
+                    reply(409, "application/json", "{\"error\":\"Local drive request rejected; refresh status.\"}"); return;
+                }
+                reply(202, "application/json", "{\"queued\":true}"); return;
+            }
+            if (!strcmp(path, "/local/mode")) {
+                if (configurationPending() || !doc["mode"].is<const char*>()) {
+                    reply(409, "application/json", "{\"error\":\"Wait for the current network operation to finish\"}"); return;
+                }
+                const char* mode = doc["mode"];
+                Configuration action = !strcmp(mode, "wifi") ? Configuration::LocalWifi :
+                    !strcmp(mode, "drive") ? Configuration::LocalDrive : Configuration::None;
+                if (action == Configuration::None || !queueConfiguration(action, Profile{})) {
+                    reply(400, "application/json", "{\"error\":\"Choose wifi or drive mode\"}"); return;
+                }
+                doc.clear(); doc["ok"] = true; doc["operation"] = configurationRequest_.load(); doc["pending"] = true;
+                serializeJson(doc, body, sizeof(body)); reply(202, "application/json", body); return;
+            }
+            if (!localWifiMode_.load()) {
+                reply(409, "application/json", "{\"error\":\"Select Wi-Fi connection mode before changing networks\"}"); return;
+            }
+        }
         if (configurationPending()) { reply(409, "application/json", "{\"error\":\"A network change is still being saved. Try again shortly.\"}"); return; }
         bool ok = false;
         if (strcmp(path, "/forget") == 0 && doc["slot"].is<unsigned>() && doc["slot"].as<unsigned>() < AtlasConfig::WifiProfileCount) {

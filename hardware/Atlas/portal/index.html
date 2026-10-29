@@ -17,11 +17,15 @@ button{font:inherit;color:inherit;cursor:pointer;min-height:44px;border:0;backgr
 .networks,.saved{margin-top:40px}.heading{display:flex;align-items:center;gap:22px;margin-bottom:8px}.heading h2{font-size:20px;flex-shrink:0}.heading:after{content:"";height:1px;background:#55518a;flex:1}.heading button{order:1}.list{padding:0;margin:0;list-style:none}.row{display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--line)}.network{flex:1;min-width:0;min-height:72px;padding:14px 10px;display:flex;align-items:center;gap:24px;text-align:left}.network:before{content:"";width:30px;height:24px;flex-shrink:0;background:currentColor;color:#8278c5;mask:url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 20"%3E%3Cpath fill="black" d="M0 5a18 18 0 0 1 24 0l-3 3a14 14 0 0 0-18 0zm5 5a10 10 0 0 1 14 0l-3 3a6 6 0 0 0-8 0zm4 5a4 4 0 0 1 6 0l-3 4z"/%3E%3C/svg%3E') center/contain no-repeat}.network:after{content:"";width:9px;height:9px;border:solid #8278c5;border-width:2px 2px 0 0;transform:rotate(45deg);flex-shrink:0;margin:0 4px}.name{flex:1;min-width:0;overflow-wrap:anywhere;font-size:18px}.meta{font-size:12px;color:var(--muted);text-align:right}.network[aria-pressed=true]{background:#7950f210}.network[aria-pressed=true]:before,.network[aria-pressed=true] .meta{color:var(--accent)}.forget{font-size:13px;color:#edb5c7;padding:8px}.empty{font-size:14px;color:var(--muted);padding:16px 0}.empty:empty{display:none}footer{margin-top:36px;color:var(--muted);font-size:12px;max-width:720px}footer p+p{margin-top:8px}#link{color:var(--secondary)}[hidden]{display:none!important}
 @media(max-width:600px){main{width:calc(100% - 48px);padding-top:32px}h1{font-size:34px;letter-spacing:0}header p{font-size:15px;line-height:1.6;margin-top:14px}.identity{margin:28px 0;gap:24px}.unit{padding-left:18px}.unit strong{font-size:24px}.unit span{font-size:12px}.robot{width:54px;height:52px}form{padding:24px 20px}h2{font-size:19px}label{font-size:15px}input{height:58px;padding:14px;font-size:17px}.password button{padding:0 14px;min-width:64px}.actions{gap:12px;margin-top:22px}.actions button{min-height:54px;font-size:17px}.networks,.saved{margin-top:32px}.heading{gap:12px}.heading h2{font-size:15px;letter-spacing:.5px}.text-button{font-size:12px}.network{min-height:66px;gap:14px;padding:12px 2px}.network:before{width:24px;height:22px}.name{font-size:16px}.meta{font-size:10px;max-width:76px}.network:after{width:7px;height:7px}.row{gap:6px}}
 @media(max-width:360px){main{width:calc(100% - 32px)}form{padding:20px 16px}.heading{gap:8px}.heading h2{font-size:14px}.meta{max-width:58px}.network{gap:10px}}@media(max-width:280px){.actions{flex-direction:column}.heading{flex-wrap:wrap}.unit strong{font-size:20px}.identity{gap:12px}}
+.page-nav{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}.page-nav a,.page-nav button{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:10px 18px;border:1px solid #7771b6;border-radius:6px;color:var(--secondary);text-decoration:none}.page-nav [aria-current=page]{background:#7950f2;border-color:#7950f2;color:#fff}.page-nav a:hover,.page-nav button:hover{border-color:var(--accent)}.page-nav a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 </style>
 </head>
 <body>
 <main>
 <header><h1>Connectivity</h1><p>Connect to your Atlas device and set up its Wi-Fi connection.</p></header>
+<nav class="page-nav" aria-label="Atlas options"><button id="wifi-mode" type="button" aria-current="page">Wi-Fi connection</button><a id="drive-mode" href="/drive">Drive &amp; replay</a></nav>
+<p id="mode-state" class="feedback" role="status">Checking operating mode…</p>
+<p class="hint">Switching to Wi-Fi connection stops motion and discards an active unsaved recording. Saved routes are kept. Switching back never starts movement.</p>
 <div class="identity"><div class="unit"><strong>ATLAS-01</strong><span>CONNECT TO DEVICE</span></div><svg class="robot" viewBox="0 0 64 60" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M32 7v9M18 49h28M8 27H3v12h5m48-12h5v12h-5"/><rect x="9" y="17" width="46" height="29" rx="7"/><circle cx="23" cy="31" r="2" fill="currentColor"/><circle cx="41" cy="31" r="2" fill="currentColor"/><circle cx="32" cy="5" r="2" fill="currentColor"/></svg></div>
 <form id="form" action="/connect" method="post">
 <h2>Wi-Fi credentials</h2>
@@ -33,12 +37,13 @@ button{font:inherit;color:inherit;cursor:pointer;min-height:44px;border:0;backgr
 </form>
 <section class="networks" aria-labelledby="available-title"><div class="heading"><h2 id="available-title">Available networks</h2><button id="scan" class="text-button" type="button">Scan networks</button></div><p id="scan-state" class="empty" role="status">Scan to find a network, or enter its name above.</p><ul id="available" class="list"></ul></section>
 <section class="saved" aria-labelledby="saved-title"><div class="heading"><h2 id="saved-title">Saved networks</h2><button id="manage" class="text-button" type="button" aria-expanded="false" disabled>Manage</button></div><p id="saved-state" class="empty" role="status">Loading saved networks…</p><ul id="history" class="list"></ul></section>
-<footer><p id="link" role="status">Checking connection…</p><p>This local setup network is open. Configure Atlas in a trusted location. Setup closes after a successful connection.</p></footer>
+<footer><p id="link" role="status">Checking connection…</p><p id="setup-policy">Configure Atlas in a trusted location.</p></footer>
 <noscript><p>JavaScript is needed to save or connect to a network.</p></noscript>
 </main>
 <script>
 const $=id=>document.getElementById(id);
 let saved=[],networks=[],slot=null,managing=false,busy=false,scanning=false,pending=null,queue=Promise.resolve(),done=false;
+let localEnabled=false,wifiEnabled=true,modeBusy=false;
 const bytes=s=>new TextEncoder().encode(s).length;
 function message(text,tone=''){ $('feedback').textContent=text;$('feedback').dataset.tone=tone; }
 function api(path,data){
@@ -46,10 +51,12 @@ function api(path,data){
  const request=queue.then(task);queue=request.catch(()=>{});return request;
 }
 function controls(){
- $('save').disabled=busy||!$('ssid').value||slot!==null;$('connect').disabled=busy||!$('ssid').value;
- $('ssid').disabled=busy;$('pass').disabled=busy;$('scan').disabled=busy||scanning;$('manage').disabled=busy||!saved.length;
+ const blocked=busy||modeBusy||(localEnabled&&!wifiEnabled);
+ $('save').disabled=blocked||!$('ssid').value||slot!==null;$('connect').disabled=blocked||!$('ssid').value;
+ $('ssid').disabled=blocked;$('pass').disabled=blocked;$('scan').disabled=blocked||scanning;$('manage').disabled=blocked||!saved.length;
+ $('wifi-mode').disabled=busy||modeBusy||scanning;$('drive-mode').setAttribute('aria-disabled',String(busy||modeBusy));
  $('save').textContent=busy&&pending?.kind==='save'?'Saving…':'Save';$('connect').textContent=busy&&pending?.kind==='connect'?'Connecting…':'Connect';
- document.querySelectorAll('.network,.forget').forEach(b=>b.disabled=busy);
+ document.querySelectorAll('.network,.forget').forEach(b=>b.disabled=blocked);
 }
 function choose(name,index=null){const changed=$('ssid').value!==name;$('ssid').value=name;slot=index;if(changed||index!==null)$('pass').value='';$('password-hint').textContent=index!==null?'Saved password will be used when connecting.':'Leave blank for an open network.';render();controls();}
 function row(name,detail,selected,select){
@@ -62,7 +69,7 @@ function render(){
 async function history(){try{saved=await api('/history');$('saved-state').textContent=saved.length?'':'No saved networks yet.';render();}catch(e){$('saved-state').textContent='Could not load saved networks. Try Manage again.';$('manage').disabled=false;}}
 function finish(text,tone){busy=false;pending=null;message(text,tone);controls();}
 async function action(kind,profile){
- if(busy)return;
+ if(busy||modeBusy||(localEnabled&&!wifiEnabled))return;
  let data;if(kind==='forget')data={slot:profile.slot};else if(kind==='connect'&&slot!==null)data={slot};else{
  if(!$('form').reportValidity())return;
  const ssid=$('ssid').value,pass=$('pass').value;
@@ -74,7 +81,11 @@ async function action(kind,profile){
 }
 async function poll(){
  try{
- const s=await api('/status');$('link').textContent=s.connected?'Connected to '+s.currentSsid:s.connecting?'Connecting to '+s.attemptSsid:'Ready for network setup';
+ const s=await api('/status');
+ localEnabled=Boolean(s.localControlEnabled);wifiEnabled=!localEnabled||s.localMode==='wifi';
+ $('mode-state').textContent=modeBusy?'Switching mode; motors inhibited.':localEnabled?(wifiEnabled?'Wi-Fi connection mode · motors inhibited.':'Drive/replay mode is active. Select Wi-Fi connection to enable setup.'):'Wi-Fi setup';
+ $('setup-policy').textContent=localEnabled?'The password-protected Atlas AP stays available after connecting. Switch back to Drive & replay to enable local controls. Connecting/scanning can briefly interrupt the AP link; rejoin if necessary.':'This local setup network is open. Configure Atlas in a trusted location. Setup closes after a successful connection.';
+ controls();$('link').textContent=s.connected?'Connected to '+s.currentSsid:s.connecting?'Connecting to '+s.attemptSsid:'Ready for network setup';
  if(pending&&pending.operation!==null){
  if(s.operation!==pending.operation){finish('The network settings changed elsewhere. Check and try again.','error');}
  else if(pending.waitStorage&&s.operationStatus==='failed'){finish('Could not save the network change. Please try again.','error');}
@@ -94,11 +105,30 @@ $('reveal').onclick=()=>{const show=$('pass').type==='password';$('pass').type=s
 for(const id of ['ssid','pass'])$(id).oninput=()=>{slot=null;$('password-hint').textContent='Leave blank for an open network.';render();};
 $('manage').onclick=()=>{managing=!managing;$('manage').textContent=managing?'Done':'Manage';$('manage').setAttribute('aria-expanded',String(managing));history();};
 $('scan').onclick=async()=>{
- if(scanning||busy)return;scanning=true;controls();$('scan').textContent='Scanning…';$('scan-state').textContent='Looking for nearby networks…';const start=Date.now();
+ if(scanning||busy||modeBusy||(localEnabled&&!wifiEnabled))return;scanning=true;controls();$('scan').textContent='Scanning…';$('scan-state').textContent='Looking for nearby networks…';const start=Date.now();
  try{let s;do{s=await api('/scan');if(s.error)throw Error(s.error);if(!s.scanning)break;if(Date.now()-start>15000)throw Error('Scanning took too long. Try again, or enter the network name.');await new Promise(r=>setTimeout(r,800));}while(true);networks=s.networks||[];render();$('scan-state').textContent=networks.some(n=>n.ssid)?'':'No visible networks found. You can enter a network name above.';}
  catch(e){$('scan-state').textContent=e.message||'Could not scan. Enter the network name or try again.';}
  finally{scanning=false;$('scan').textContent='Scan networks';controls();}
 };
+async function selectMode(mode,target=''){
+ if(busy||modeBusy)return;
+ if(!localEnabled){if(target)location.href=target;return}
+ modeBusy=true;controls();message('Switching mode; Atlas will remain stopped.');
+ try{
+  const operation=await api('/local/mode',{mode}),deadline=Date.now()+15000;
+  while(Date.now()<deadline){
+   const s=await api('/status');
+   if(s.operation!==operation.operation)throw Error('The operating mode changed elsewhere. Check status and try again.');
+   if(s.operationStatus==='failed')throw Error('Could not switch operating mode.');
+   if(s.operationStatus==='complete'&&s.localMode===mode){wifiEnabled=mode==='wifi';if(target)location.href=target;message(wifiEnabled?'Wi-Fi connection enabled. Motors remain inhibited.':'Drive/replay enabled. No movement was started.','success');return}
+   await new Promise(resolve=>setTimeout(resolve,150));
+  }
+  throw Error('Mode switch not yet confirmed. Wait for scanning/connecting to finish and check status.');
+ }catch(e){message(e.message+' Rejoin the Atlas AP if necessary.','error')}
+ finally{modeBusy=false;controls()}
+}
+$('wifi-mode').onclick=()=>selectMode('wifi');
+$('drive-mode').onclick=e=>{e.preventDefault();void selectMode('drive','/drive')};
 history().then(poll);controls();
 </script>
 </body>

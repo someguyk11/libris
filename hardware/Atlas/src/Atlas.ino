@@ -6,6 +6,8 @@
 #include "TelemetryManager.h"
 #include "ImuManager.h"
 #include "PcfManager.h"
+#include "LocalDrive.h"
+#include "LocalRouteStore.h"
 
 MotionController motion;
 SensorManager sensors;
@@ -17,6 +19,54 @@ Routes routes(motion, sensors, checkpoints);
 ObstacleAvoidance obstacles;
 Navigation navigation(motion, sensors, safety, routes, checkpoints, obstacles);
 TelemetryManager telemetry(motion, sensors, safety, navigation);
+
+// OPTIONAL DEEP SLEEP -- intentionally commented out in its entirety.
+// No automatic sleep, serial command, web endpoint, or setup/loop call is added.
+// API references (also checked against the installed Arduino-ESP32 headers):
+// https://docs.espressif.com/projects/arduino-esp32/en/latest/api/deepsleep.html
+// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/sleep_modes.html
+/*
+#include <esp_sleep.h>
+
+// Call only from the motor-owning loop, after an explicit operator request.
+// Before enabling this code, implement coordinated shutdown of the network
+// worker (no queued commands, HTTP, or NVS writes), and turn off Wi-Fi through
+// its owner. The current firmware has no coordinated sleep/shutdown interface.
+// Save any wanted route and wait for confirmed flash completion FIRST.
+//
+// Disconnect motor power before setting motorPowerIsolated=true. A software
+// stop/PWM level cannot guarantee safe motor inputs during sleep/reset. Future
+// powered-motor support needs verified nSLEEP/pull-down hardware across both.
+// Deep sleep disables safety monitoring, encoders, sensors and the local page;
+// it does not switch off external motor drivers, sensors or the PCF expander.
+// Secure the robot: an unpowered motor is not a mechanical parking brake.
+//
+// Timer wakeup reboots through setup(); this function does not resume execution.
+// RAM routes, encoder counts and RAM safety latches are lost. Do not restore
+// motion automatically; require fresh readings and a new operator command.
+bool enterAtlasDeepSleep(uint32_t wakeAfterSeconds,
+                         bool motorPowerIsolated,
+                         bool networkWorkerStoppedAndStorageIdle) {
+    if (wakeAfterSeconds == 0 || !motorPowerIsolated ||
+        !networkWorkerStoppedAndStorageIdle) return false;
+
+    navigation.cancel();
+    safety.emergencyStop(); // Keep motion inhibited even if timer setup fails.
+    if (motion.moving()) return false;
+
+    // Timer-only wakeup: no guessed GPIO assignments or external wake wiring.
+    if (esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL) != ESP_OK)
+        return false;
+    const uint64_t wakeAfterUs = static_cast<uint64_t>(wakeAfterSeconds) * 1000000ULL;
+    if (esp_sleep_enable_timer_wakeup(wakeAfterUs) != ESP_OK)
+        return false; // Invalid/unsupported intervals must not cause endless sleep.
+
+    esp_deep_sleep_start(); // Does not return; timer wake starts a fresh boot.
+}
+
+// Deliberately no invocation here. Uncommenting this block alone does NOT sleep.
+// Wake duration is an explicit argument; no inactivity timeout is configured.
+*/
 
 // Fixed buffers and availableForWrite avoid waiting for serial TX room in the
 // real-time loop. Diagnostics may be dropped; safety checks must not be.
@@ -100,14 +150,17 @@ void diagnostics(uint32_t nowMs) {
 }
 
 void setup() {
-    if (AtlasConfig::DiagnosticsEnabled || AtlasConfig::HardwareTestMode) Serial.begin(AtlasConfig::SerialBaud);
+    if (AtlasConfig::DiagnosticsEnabled || AtlasConfig::HardwareTestMode || AtlasConfig::LocalDriveEnabled) Serial.begin(AtlasConfig::SerialBaud);
     motion.begin();
     sensors.begin();
     const bool imuReady = imu.begin();
     const bool pcfReady = pcf.begin();
     safety.begin(millis());
     navigation.begin(millis());
-    const bool networkWorkerReady = telemetry.begin();
+    if (AtlasConfig::LocalDriveEnabled && !LocalRouteStore::begin()) Serial.println("Local route storage unavailable; manual driving remains available.");
+    const bool localReady = !AtlasConfig::LocalDriveEnabled || LocalDrive::begin();
+    if (!localReady) safety.emergencyStop();
+    const bool networkWorkerReady = localReady && telemetry.begin();
     if (AtlasConfig::DiagnosticsEnabled) {
         // Startup only: there is no motion permission here.
         Serial.println("Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
@@ -136,10 +189,11 @@ void loop() {
     sensors.update(millis());
     pcf.update(millis());
     safety.update(millis());
-    handleTestInput();
+    if (!AtlasConfig::LocalDriveEnabled) handleTestInput(); // only one motion command owner
     safety.update(millis());
     navigation.update(millis());
     telemetry.update(millis()); // bounded queue handoff only; no Wi-Fi/HTTP in this task.
+    LocalDrive::update(motion, sensors, safety, navigation, routes, millis(), telemetry.localDriveAllowed());
     safety.update(millis()); // check the newly selected motion's required directions before output.
     motion.update(millis());
     safety.update(millis()); // latch driver/control failures immediately.

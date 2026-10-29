@@ -18,6 +18,7 @@ public:
     bool begin();
     void update(uint32_t nowMs);
     bool connected() const { return network_.connected(); }
+    bool localDriveAllowed() const { return network_.localDriveAllowed(); }
     bool backendReady() const { return healthy_.load() && !deliveryFault_.load(); }
 private:
     struct Ack { char id[37]; char controlId[37]; BackendClient::ResultStatus status; bool ok; };

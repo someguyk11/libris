@@ -18,6 +18,8 @@ public:
     bool beginRecording(); // replaces the RAM route; no flash storage.
     bool record(const Segment& segment);
     bool finishRecording();
+    bool load(const Segment* segments, uint8_t count); // validates all before replacing RAM route
+    bool clear(); // stationary explicit discard; never deletes persistent routes
     bool start(uint32_t nowMs);
     void update(uint32_t nowMs);
     bool pause();

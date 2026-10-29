@@ -1,0 +1,3 @@
+# Local MCP audit/build logs are not firmware source or release evidence.
+/.pio-mcp-workspace/
+/tests/host/__pycache__/

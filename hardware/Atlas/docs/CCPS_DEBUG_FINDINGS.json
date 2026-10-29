@@ -1,0 +1,54 @@
+{
+  "audit_date": "2026-10-27",
+  "revision": "3261d89e17039aab74faff41ef9ca31ffaf01d0a",
+  "scope": "Existing uncommitted working tree; audit-only additions; no repairs",
+  "confirmed_counts": {"P0": 0, "P1": 3, "P2": 3, "P3": 0},
+  "suspected_count": 2,
+  "tests": {
+    "original_O0": {"reported_items_pass": 220, "reported_items_fail": 0, "pure_check_executions": 162, "scenario_cases": 58, "suites": 10},
+    "original_Os": {"reported_items_pass": 220, "reported_items_fail": 0, "pure_check_executions": 162, "scenario_cases": 58, "suites": 10},
+    "audit_cpp_O0": {"scenarios_pass": 21, "scenarios_fail": 6, "suites": 4},
+    "audit_cpp_Os": {"scenarios_pass": 21, "scenarios_fail": 6, "suites": 4},
+    "audit_backend_in_memory": {"scenarios_pass": 0, "scenarios_fail": 1, "live_requests": 0},
+    "finite_difference_covariance_max_absolute_error": 4.22761425e-8
+  },
+  "builds": {
+    "main": {"success": true, "complete_image_bytes": 1053072, "application_bytes": 1037976, "static_ram_bytes": 61604, "excess_bytes": 53072, "sha256": "b5b70ce15b53a6cd7a0349c252efc4076a7a34c2aa1ed885e0b48645edf322c8"},
+    "feature_probe": {"success": true, "complete_image_bytes": 1190000, "application_bytes": 1172171, "static_ram_bytes": 63108, "excess_bytes": 190000, "sha256": "03972f5376931552d30bc23f4fdcaefc18d9a467d566551d4af2fd588954f55f"},
+    "release_limit_bytes": 1000000,
+    "production_provisioned_image_verified": false,
+    "clean_room_rebuild": false
+  },
+  "findings": [
+    {"id": "CCPS-A01", "severity": "P1", "status": "PROVEN DEFECT", "summary": "Exact-tick completion accepts coast beyond target", "references": ["src/MotionController.cpp:250-270", "src/ConfidenceSupervisor.cpp:65-125", "src/CheckpointManager.cpp:30-35", "src/TelemetryManager.cpp:179-185,358-363"], "reproductions": ["exact_tick_coast_rejection", "backend_coast_reject"], "complexity": "medium"},
+    {"id": "CCPS-A02", "severity": "P1", "status": "PROVEN DEFECT", "summary": "Asymmetric reverse expected-yaw sign is wrong", "references": ["src/ConfidenceSupervisor.cpp:75-86", "src/MotionConfidence.cpp:17-22"], "reproductions": ["reverse_unequal_target_sign", "reverse_asymmetric_ticks"], "complexity": "small-to-medium"},
+    {"id": "CCPS-A03", "severity": "P2", "status": "PROVEN DEFECT", "summary": "Persistent unavailable required sensor lacks direct assistance escalation", "references": ["src/ConfidenceSupervisor.cpp:164-179,226-239"], "reproductions": ["persistent_sensor_human"], "complexity": "medium"},
+    {"id": "CCPS-A04", "severity": "P1", "status": "PROVEN DEFECT", "summary": "Backend guidance discards detailed confidence failure; assistance alert chain incomplete", "references": ["src/BackendClient.cpp:287-305", "repo:backend/guidance.py:546-549,581-582", "repo:src/views/admin/components/GuidanceMonitor.vue:19-21,30-39"], "reproductions": ["backend_reporting_probe.py"], "complexity": "medium-to-large"},
+    {"id": "CCPS-A05", "severity": "P2", "status": "PROVEN DEFECT", "summary": "Complete images exceed hard release limit", "references": ["docs/audit-output/2026-10-27/build-measurements.json"], "reproductions": ["main build and binary length", "feature probe build and binary length"], "complexity": "medium-to-large"},
+    {"id": "CCPS-A06", "severity": "P2", "status": "PROVEN DEFECT", "summary": "Central aggregation hides NaN when public pre-assessment has usable=true", "references": ["src/ConfidenceSupervisor.cpp:161-166,205-230"], "reproductions": ["nonfinite_public_assessment"], "normal_hardware_origin_demonstrated": false, "complexity": "small"}
+  ],
+  "suspected": [
+    {"id": "CCPS-S01", "potential_severity": "P1", "status": "SUSPECTED DEFECT", "summary": "Undetected raw IMU acquisition loss inside gap allowance", "references": ["src/ImuManager.cpp:90-132", "src/ImuIntegration.cpp:24-25,41-49"], "requires_target_trace": true},
+    {"id": "CCPS-S02", "potential_severity": "P2", "status": "SUSPECTED DEFECT", "summary": "Adverse publication ordering may starve encoder/IMU bracketing", "references": ["src/ConfidenceIntegration.cpp:50-66", "src/ConfidenceSupervisor.cpp:15-46"], "requires_target_trace": true}
+  ],
+  "readiness": {
+    "hard_confidence_failure_stops_simulated_motion": true,
+    "local_safety_authoritative_in_inspected_supported_paths": true,
+    "supported_movement_origin_bypass_demonstrated": false,
+    "human_flag_for_lost": true,
+    "human_escalation_complete": false,
+    "actual_backend_receipt_verified": false,
+    "generic_guidance_failure_persistence_supported_by_source": true,
+    "detailed_guidance_reason_preserved": false,
+    "dedicated_ccps_admin_notification_implemented": false,
+    "actual_admin_display_verified": false,
+    "target_runtime_profiled": false,
+    "physical_navigation_tested": false,
+    "ready_for_controlled_motor_navigation_validation": false,
+    "flashed": false,
+    "production_repairs_applied": false
+  },
+  "detailed_register": "CCPS_DEBUG_FINDINGS.md",
+  "full_report": "CCPS_FULL_DEBUG_AUDIT.md",
+  "raw_evidence_directory": "audit-output/2026-10-27"
+}

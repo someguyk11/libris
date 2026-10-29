@@ -61,6 +61,25 @@ bool Routes::start(uint32_t nowMs) {
     return true;
 }
 
+bool Routes::load(const Segment* segments, uint8_t count) {
+    if (!segments || !count || count > MaximumRouteSegments || motion_.moving() ||
+        state_ == State::Recording || state_ == State::Running || state_ == State::Paused) return false;
+    for (uint8_t i = 0; i < count; ++i) if (!validSegment(segments[i])) return false;
+    for (uint8_t i = 0; i < count; ++i) segments_[i] = segments[i];
+    count_ = count; index_ = 0; hasRoute_ = true;
+    started_ = validating_ = endpointReached_ = needsResume_ = false;
+    state_ = State::Ready; error_ = Error::None;
+    return true;
+}
+
+bool Routes::clear() {
+    if (motion_.moving() || state_ == State::Running || state_ == State::Paused) return false;
+    count_ = index_ = 0; hasRoute_ = false;
+    started_ = validating_ = endpointReached_ = needsResume_ = false;
+    state_ = State::Empty; error_ = Error::None;
+    return true;
+}
+
 bool Routes::launch(const Segment& s) {
     switch (s.kind) {
         case MotionController::Kind::Forward: return motion_.moveDistance(s.distanceCm);

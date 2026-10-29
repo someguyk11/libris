@@ -11,7 +11,7 @@ bool configurationValid() {
         ImuBusTimeoutMs == 0 || ImuBusTimeoutMs > 20 || ImuSampleIntervalMs == 0 ||
         ImuMaximumAgeMs <= ImuSampleIntervalMs) return false;
     const int used[] = {LeftMotor.in1, LeftMotor.in2, RightMotor.in1, RightMotor.in2,
-        DriverSleepPin, LeftEncoderPin, RightEncoderPin,
+        DriverSleepPin, SecondDriverSleepPin, LeftEncoderPin, RightEncoderPin,
         Sensors[0].trigger, Sensors[0].echo, Sensors[1].trigger, Sensors[1].echo,
         Sensors[2].trigger, Sensors[2].echo, Sensors[3].trigger, Sensors[3].echo};
     for (int pin : used) if (pin == ImuSdaPin || pin == ImuSclPin) return false;

@@ -1,0 +1,1275 @@
+diff --git a/hardware/Atlas/README.md b/hardware/Atlas/README.md
+index 1feb0e5..9f2e6c5 100644
+--- a/hardware/Atlas/README.md
++++ b/hardware/Atlas/README.md
+@@ -1,11 +1,34 @@
+-# Atlas V1 — Layers 1, 2 and 3
++# Atlas V1 — Layers 1, 2, 3 and CCPS
+ 
+ PlatformIO Arduino firmware for **ESP32 DevKit V1 / classic ESP32**. Build the
+ existing `esp32dev` environment from this directory; the sketch and modules live
+ in `src/`. Do not combine it with `../libot-esp.ino` (two `setup()`/`loop()` pairs).
+ Layer 3 adds Wi-Fi provisioning, authenticated HTTPS and one isolated network worker.
+ It uses the existing ArduinoJson dependency and Arduino/ESP32 framework libraries.
+-The existing PlatformIO framework, board and dependency configuration is unchanged.
++The existing PlatformIO framework, board and dependencies are retained; explicit
++`-Os` size optimization is now enabled. CCPS supervises the existing controllers,
++with relative IMU/encoder evidence and independent local-safety enforcement.
++
++## Current CCPS status — 2026-10-27
++
++- **Implemented:** fixed-size confidence supervision, exactly ten movement records,
++  relative pose/persistent uncertainty, checkpoint assessment and enforced motion
++  gates. No new CCPS task; existing IMU/network workers retain I/O ownership.
++- **Verified in software:** ESP32 main and feature-retaining inert probe builds
++  succeed; ten host suites pass at both `-O0` and `-Os` (**220 reported checks/cases
++  per run**, with hardware and network I/O stubbed as documented).
++- **1 MB release gate: FAIL.** Complete main `firmware.bin` is **1,053,072 bytes**,
++  **53,072 bytes over** 1,000,000. The inert feature-retaining probe is **1,190,000
++  bytes**. Fitting the existing 3 MiB factory slot is not a release-size pass.
++- **Not deployment-ready:** no upload, motor activation, physical calibration,
++  target timing/heap/stack measurements or live-backend tests were performed.
++  Missing wiring/calibration remains explicitly unconfigured; movement is inhibited.
++
++See [CCPS_IMPLEMENTATION.md](CCPS_IMPLEMENTATION.md) for ownership, configuration,
++test coverage and the pending physical checklist, and
++[CCPS_RESOURCES.md](CCPS_RESOURCES.md) for exact sizes/hashes, experiments,
++reproduction commands and release blockers. The older partition-migration numbers
++at the end of this README are historical, not the current CCPS measurements.
+ 
+ ## Separate legacy firmware
+ 
+@@ -22,7 +45,7 @@ reuse in this cooperative real-time loop.
+ | `AtlasConfig.h` | Pins, confirmations, calibration, tunings, startup validation and fault names. |
+ | `MotionController.h/.cpp` | Four PWM inputs controlling two wheel groups; unsigned encoder interrupts; ramped nonblocking distance moves and in-place 90° turns; progress, stops and encoder-preserving resume. |
+ | `SensorManager.h/.cpp` | Four staggered trigger/echo sensors, interrupt-captured pulse widths, timestamps and invalid/stale/fault states. |
+-| `SafetyController.h/.cpp` | Sole owner of motion permission; obstacle, sensor, stall, timeout and loop-overrun checks; critical fault latch and explicit reset. |
++| `SafetyController.h/.cpp` | Independent local safety authority and final local-safety AND fresh CCPS permission; obstacle, sensor, stall, timeout and loop-overrun checks; critical fault latch and explicit reset. |
+ | `Navigation.h/.cpp` | Explicit robot states; manual commands, recording, replay, pause/resume, cancellation and fault coordination. |
+ | `Routes.h/.cpp` | Fixed-capacity RAM route; encoder-based straight/90° segments, execution, interruption and deadlines. |
+ | `CheckpointManager.h/.cpp` | Wheel endpoint validation, fresh sensor evidence and bounded observation retries. |
+@@ -30,8 +53,10 @@ reuse in this cooperative real-time loop.
+ | `NetworkManager.h/.cpp` | Wi-Fi profiles, nonblocking reconnect, temporary captive portal and stop-approved profile writes. Scoped in `Atlas` to avoid the Arduino 3.x core class of the same name. |
+ | `BackendClient.h/.cpp` | Bounded, authenticated HTTPS requests and strict backend payload validation. |
+ | `TelemetryManager.h/.cpp` | Copied queues, command leases/deduplication, start acknowledgements, measured results and supported telemetry. |
++| `ImuManager.h/.cpp` | Existing isolated LSM6DSO worker; copied diagnostic and calibrated relative-yaw evidence, never motor control. |
++| `ConfidenceTypes.h`, `SensorConfidence`, `ImuIntegration`, `MotionConfidence`, `MovementHistory`, `PoseEstimator`, `ConfidenceSupervisor`, `ConfidenceIntegration` | Hardware-independent confidence modules and the single-loop adapter; see the CCPS file inventory. |
+ | `AtlasSecrets.example.h` | Empty template for the ignored local device-key/trusted-CA header. |
+-| `Atlas.ino` | Initializes all three layers; interleaves safety checks, network queue processing, bounded diagnostics and optional test commands. |
++| `Atlas.ino` | Initializes existing layers and CCPS; interleaves safety/supervision checks, network queue processing, bounded diagnostics and optional test commands. |
+ 
+ Use all motion, sensor, safety and navigation interfaces from the single Arduino
+ loop, never from the network worker. Interrupt capture uses short spinlocks;
+@@ -39,6 +64,9 @@ Layer 3 shares only atomic flags and bounded, copied queue messages.
+ Movement functions return acceptance immediately; inspect `progress()`, `state()`
+ and `fault()` for completion/failure. Positive distance is forward, negative is
+ backward; `turn90(true)` is clockwise and `turn90(false)` counterclockwise.
++Motion also requires the existing execution/context gate and fresh CCPS permission;
++confidence cannot clear or override a local safety fault. Stopped verification
++(`v` in hardware-test mode) never resumes, clears Lost or resets uncertainty.
+ 
+ ## Navigation interface and route semantics
+ 
+@@ -125,23 +153,20 @@ also apply. Sensor thresholds/hysteresis are shared with Layer 1, not duplicated
+ From this directory, run with Python 3 and an existing C++17 host compiler:
+ 
+ ```sh
+-python tests/host/run.py --cxx clang++
++python tests/host/run.py --optimization O0 --cxx clang++
++python tests/host/run.py --optimization Os --cxx clang++
+ # g++ is also supported; for Zig, pass the path to the zig executable.
+ ```
+ 
+-The runner installs nothing and never connects to hardware. It compiles the real
+-`Navigation`, `Routes`, `CheckpointManager` and `ObstacleAvoidance` sources with
+-their real headers, using deterministic fake motion, sensors, safety and time.
+-In a disposable source copy only, physical calibration predicates are simulated
+-as valid and the optional private provisioning include is removed. Production
+-configuration and all software limits remain unchanged; no secrets are read.
+-
+-Coverage includes forward/backward/turn recording and replay, measured endpoints,
+-fresh checkpoint evidence and retries, capacity/invalid input, pause/coasting,
+-cancellation, obstacle clearance/acknowledgement/limits, reset ordering and stale
+-resume requests, bounded start/segment/session failures, recovery and clock wrap.
+-`--source-dir PATH` optionally runs the same suite against a source snapshot.
+-These are Layer 2 tests, not validation of the real motor/sensor/safety drivers.
++The runner installs nothing and never connects to hardware. It runs seven pure
++confidence suites, navigation-policy scenarios, real motion/safety/navigation/CCPS
++adapter scenarios and real telemetry-coordinator scenarios. Hardware access,
++clocks and transport/RTOS handoffs are stubbed; this is not target execution or a
++live-network test. Disposable configurations simulate calibration and remove the
++optional private provisioning include; production configuration and secrets are
++not changed/read. `--source-dir PATH` accepts a source tree matching these test
++interfaces. Exact suite counts and coverage are in
++[CCPS_IMPLEMENTATION.md](CCPS_IMPLEMENTATION.md#software-validation).
+ 
+ Build the ESP32 firmware separately, without uploading:
+ 
+@@ -190,8 +215,17 @@ flag until the corresponding electrical/wiring condition has been verified.
+ 5. **Turns:** measure effective wheel contact-centre track width and CW/CCW
+    skid-steer calibration. A nominal in-place 90° move uses wheel travel
+    `pi * track / 4 * directionScale`. Both direction scales default to zero, so
+-   turns remain rejected until explicitly calibrated. Distance moves do not
+-   require turn calibration. Encoder distance is not an absolute heading sensor.
++   turns remain rejected until explicitly calibrated. The low-level distance
++   conversion does not need turn calibration, but enforced CCPS additionally
++   requires valid track/turn, IMU and confidence configuration before motion.
++   Encoder distance is not an absolute heading sensor.
++6. **CCPS/IMU:** supply verified IMU bus pins/address/electrical confirmation,
++   sensor-to-body mounting rotation, stationary bias/noise thresholds and lifetime,
++   motion tolerances, process noise and uncertainty/warning limits in
++   `ImuNavigationParameters` and `ConfidenceCalibration`. Defaults fail closed;
++   synthetic host/probe settings are not production calibration. Checkpoints,
++   reconnects and safety resets never zero accumulated uncertainty. See the
++   [CCPS configuration requirements](CCPS_IMPLEMENTATION.md#configuration-and-timing-limits).
+ 
+ Other centralized adjustments: direction inversions; PWM frequency/resolution
+ and core-2 channel reservation; cruise/turn/minimum/maximum duty; acceleration and
+@@ -244,6 +278,11 @@ blocking. Do not insert the old HTTP/Wi-Fi routines into this loop.
+ 
+ ## Manual bring-up checklist (not yet performed)
+ 
++The unresolved 1 MB release gate and unconfigured CCPS/IMU calibration are additional
++blockers. These historical bring-up steps are future validation guidance, not
++authorization to upload or energize motors. Complete CCPS prerequisites and use a
++separately reviewed bench procedure; do not bypass enforcement to run the checklist.
++
+ Use a current-limited supply, lift the wheels, keep hands clear and keep the
+ physical power disconnect within reach. Never test stall conditions at unrestricted
+ current or rely on serial input as a physical emergency stop.
+@@ -407,6 +446,8 @@ command, eight results, eight acknowledgements and one latest sensor sample.
+ | `POST /robot/{id}/command/result` | `started`, `completed`, `failed`; real UTC, measured independent encoder deltas, commanded wheel directions and valid sensor ranges when available. |
+ | `POST /robot/{id}/sensors` | Recording-only samples with required command/recording IDs, sequence, real UTC and valid ranges. |
+ | `POST /robot/{id}/telemetry` | Only `wifi_ssid`, `signal_strength`, `uptime_seconds`, `firmware_version`, as accepted by the current backend. |
++| `GET /guidance/command?protocol=3&stopped=...` | Existing Protocol-3 command identities, independent tick targets and pause/resume controls. |
++| `POST /guidance/result` / `POST /guidance/arrival` | Existing guidance acknowledgements/results and stopped, operator-attested arrival; CCPS adds no autonomous arrival claim. |
+ 
+ Every request uses `X-Atlas-Key`, verified CA/hostname TLS and no redirects.
+ HTTP/1.0 responses must have finite JSON Content-Length of at most 4,096 bytes;
+@@ -443,8 +484,13 @@ There is no supported API for general navigation/progress/route/event/battery
+ telemetry, so these fields/endpoints are not invented. Faults are exposed through
+ execution failures and existing local diagnostics. There is no battery interface.
+ Backend recording/save/checkpoint attestation remains staff-managed; local RAM
+-routes are not uploaded. **Guidance protocol 2, OTP/display, exact independent
+-wheel-tick replay, arrival confirmation and SLAM/vision are not implemented.**
++routes are not uploaded. Existing **Protocol-3** task/session/route/step identities,
++exact independent wheel-tick replay, start ACKs, leases, duplicate suppression and
++operator-attested arrival are retained. CCPS additionally gates endpoint acceptance
++and waits for settling before completion. Full protocol identities remain the
++authority; confidence context hashes are diagnostic only. OTP/display and SLAM/vision
++are not implemented. CCPS adds no backend endpoint or rich telemetry schema;
++bounded failure summaries use the existing `error` field.
+ 
+ ### Layer 3 validation checklist (not yet performed)
+ 
+@@ -544,7 +590,11 @@ SHA-256 manifest were backed up outside the project at
+ `C:\Users\Dell\AppData\Local\Temp\opencode\atlas-v1-migration-20261021-221609`.
+ These backups contain no device flash readout.
+ 
+-## Build and validation status
++## Historical partition-migration evidence — 2026-10-21
++
++The following records pre-CCPS work. Current build/test/release status is at the top
++of this README and in [CCPS_RESOURCES.md](CCPS_RESOURCES.md). In particular, resolving
++the factory-slot capacity issue did not resolve the later hard 1,000,000-byte gate.
+ 
+ PlatformIO MCP compiled the original Layer 1 baseline and the integrated Layers 2/3
+ using the existing `platformio.ini`, environment `esp32dev`. The resolved toolchain
+diff --git a/hardware/Atlas/platformio.ini b/hardware/Atlas/platformio.ini
+index 926cbf4..ae618d7 100644
+--- a/hardware/Atlas/platformio.ini
++++ b/hardware/Atlas/platformio.ini
+@@ -6,6 +6,8 @@ board_build.partitions = partitions_atlas_v1.csv
+ build_flags = 
+     -DARDUINO_USB_MODE=0
+     -DARDUINO_USB_CDC_ON_BOOT=0
++    ; Measured size optimization; same framework, safety, TLS and protocol features.
++    -Os
+ monitor_speed = 115200
+ monitor_filters = esp32_exception_decoder
+ lib_deps = 
+diff --git a/hardware/Atlas/src/Atlas.ino b/hardware/Atlas/src/Atlas.ino
+index 61809ae..27db1c7 100644
+--- a/hardware/Atlas/src/Atlas.ino
++++ b/hardware/Atlas/src/Atlas.ino
+@@ -5,6 +5,7 @@
+ #include "Navigation.h"
+ #include "TelemetryManager.h"
+ #include "ImuManager.h"
++#include "ConfidenceIntegration.h"
+ 
+ MotionController motion;
+ SensorManager sensors;
+@@ -15,6 +16,7 @@ Routes routes(motion, sensors, checkpoints);
+ ObstacleAvoidance obstacles;
+ Navigation navigation(motion, sensors, safety, routes, checkpoints, obstacles);
+ TelemetryManager telemetry(motion, sensors, safety, navigation);
++ConfidenceIntegration confidence(motion,sensors,imu,safety,checkpoints,navigation);
+ 
+ // Fixed buffers and availableForWrite avoid waiting for serial TX room in the
+ // real-time loop. Diagnostics may be dropped; safety checks must not be.
+@@ -35,6 +37,7 @@ void handleTestInput() {
+         return;
+     }
+     if (command == 's') { navigation.cancel(); return; }
++    if (command == 'v') { logLine(navigation.verifyConfidence(millis())?"Confidence verification accepted; no automatic resume.\n":"Confidence verification denied.\n"); return; }
+     bool accepted = false;
+     switch (command) {
+         case 'f': accepted = navigation.driveDistance(AtlasConfig::TestDistanceCm); break;
+@@ -77,9 +80,25 @@ void diagnostics(uint32_t nowMs) {
+             static_cast<unsigned>(checkpoints.validatedCount()), static_cast<unsigned>(checkpoints.retries()));
+     } else if (page == AtlasConfig::SensorCount + 3) {
+         const auto value = imu.reading(nowMs);
+-        snprintf(line, sizeof(line), "imu diagnostic valid=%u error=%u age=%lu ms (not a navigation/safety input)\n",
++        snprintf(line, sizeof(line), "imu valid=%u error=%u age=%lu ms; relative-yaw calibrated=%u continuous=%u\n",
+             static_cast<unsigned>(value.valid), static_cast<unsigned>(value.error),
+-            static_cast<unsigned long>(nowMs - value.timestampMs));
++            static_cast<unsigned long>(nowMs - value.timestampMs),static_cast<unsigned>(value.navigation.calibrated),
++            static_cast<unsigned>(value.navigation.continuous));
++    } else if(page==AtlasConfig::SensorCount+4) {
++        const auto& d=confidence.supervisor().decision();
++        snprintf(line,sizeof(line),"CCPS trust=%u clearance=%u health=%u permit=%u reasons=%08lx valid=%u maxSlice=%lu us\n",
++            static_cast<unsigned>(d.trust),static_cast<unsigned>(d.clearance),static_cast<unsigned>(d.health),
++            static_cast<unsigned>(d.permissions),static_cast<unsigned long>(d.reasons),static_cast<unsigned>(d.scores),
++            static_cast<unsigned long>(confidence.maximumSliceUs()));
++    } else if(page==AtlasConfig::SensorCount+5) {
++        const auto& s=confidence.supervisor(); const auto p=s.estimator().pose(); const auto covariance=s.estimator().covariance();
++        snprintf(line,sizeof(line),"CCPS pose relative %.1f %.1f %.3f; Pmax=%.3f Ptheta=%.6f history=%u recoveryEligible=%u\n",
++            p.x,p.y,p.yaw,covariance.maximumPositionVariance(),covariance.tt,static_cast<unsigned>(s.history().size()),
++            static_cast<unsigned>(s.physicalRecoveryEligible()));
++    } else if(page==AtlasConfig::SensorCount+6) {
++        const auto& d=confidence.supervisor().decision();
++        snprintf(line,sizeof(line),"CCPS indices (not probabilities): S=%.2f M=%.2f H=%.2f R=%.2f Nav=%.2f valid=%u\n",
++            d.sensor,d.motion,d.history,d.route,d.navigation,static_cast<unsigned>(d.scores));
+     } else {
+         const uint8_t index = page - 3;
+         const auto reading = sensors.reading(static_cast<AtlasConfig::SensorId>(index), nowMs);
+@@ -88,7 +107,7 @@ void diagnostics(uint32_t nowMs) {
+             static_cast<unsigned>(reading.error), static_cast<unsigned>(reading.consecutiveFailures),
+             static_cast<unsigned>(reading.faulted));
+     }
+-    page = (page + 1) % (AtlasConfig::SensorCount + 4);
++    page = (page + 1) % (AtlasConfig::SensorCount + 7);
+     logLine(line);
+ }
+ 
+@@ -99,12 +118,14 @@ void setup() {
+     const bool imuReady = imu.begin();
+     safety.begin(millis());
+     navigation.begin(millis());
++    confidence.begin();
+     const bool networkWorkerReady = telemetry.begin();
+     if (AtlasConfig::DiagnosticsEnabled) {
+         // Startup only: there is no motion permission here.
+         Serial.println("Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
+         if (!networkWorkerReady) Serial.println("Network worker unavailable; backend movement disabled.");
+-        if (!imuReady) Serial.println("IMU diagnostics unavailable: check explicit bus configuration.");
++        if (!imuReady) Serial.println("IMU unavailable: check explicit bus configuration.");
++        Serial.println("CCPS enforced; supply and validate ConfidenceCalibration + IMU mounting/calibration before motion.");
+         if (!BackendClient::configured()) Serial.println("Backend disabled: provision private device key and trusted TLS CA.");
+         const char* error = AtlasConfig::pinConfigurationError();
+         if (error) Serial.println(error);
+@@ -117,6 +138,7 @@ void setup() {
+         if (AtlasConfig::HardwareTestMode) {
+             Serial.println("Tests: f/b distance, c/a turn, s cancel, x E-stop, r reset.");
+             Serial.println("Layer 2: n record, e finish, p replay, h pause, u resume (after reset if latched).");
++            Serial.println("CCPS: v verify while stopped; never clears safety, Lost state or accumulated uncertainty.");
+         }
+     }
+ }
+@@ -127,9 +149,12 @@ void loop() {
+     sensors.update(millis());
+     safety.update(millis());
+     handleTestInput();
++    confidence.update(millis());
++    telemetry.confidence(confidence.supervisor().decision());
+     safety.update(millis());
+     navigation.update(millis());
+     telemetry.update(millis()); // bounded queue handoff only; no Wi-Fi/HTTP in this task.
++    confidence.apply(millis()); // bind permission to a newly accepted movement before any motor output.
+     safety.update(millis()); // check the newly selected motion's required directions before output.
+     motion.update(millis());
+     safety.update(millis()); // latch driver/control failures immediately.
+diff --git a/hardware/Atlas/src/AtlasConfig.h b/hardware/Atlas/src/AtlasConfig.h
+index f872cdc..42bb28e 100644
+--- a/hardware/Atlas/src/AtlasConfig.h
++++ b/hardware/Atlas/src/AtlasConfig.h
+@@ -3,6 +3,7 @@
+ #include <Arduino.h>
+ #include <math.h>
+ #include <esp_arduino_version.h>
++#include "ConfidenceSupervisor.h"
+ 
+ // Optional private provisioning; never commit this file or print its contents.
+ #if __has_include("AtlasSecrets.local.h")
+@@ -61,9 +62,17 @@ constexpr SensorPins Sensors[SensorCount] = {
+ // trigger compatibility for the actual ultrasonic model before enabling GPIO.
+ constexpr bool SensorElectricalInterfaceConfirmed = false;
+ 
+-// Optional LSM6DSO diagnostics only: V1 safety/navigation uses encoders and
+-// ultrasonics, not attitude estimates. No inferred wiring or bus address.
++// LSM6DSO: diagnostic samples plus CCPS relative-yaw evidence. No absolute heading,
++// inferred wiring, mounting orientation, bias or drift calibration.
+ constexpr bool ImuDiagnosticsEnabled = false;
++constexpr bool ImuNavigationEnabled = true;
++// Installation/calibration MUST be supplied; zero parameters fail closed.
++constexpr AtlasConfidence::ImuParameters ImuNavigationParameters{};
++constexpr uint32_t ImuNavigationPollMs = 5;
++// Observation-only is a development aid, NOT an autonomous safety release mode.
++// Enforcement is the shipped default. Unknown physical limits stay zero.
++constexpr bool ConfidenceObservationOnly = false;
++constexpr AtlasConfidence::SupervisorParameters ConfidenceCalibration{};
+ constexpr int ImuSdaPin = UnconfiguredPin;
+ constexpr int ImuSclPin = UnconfiguredPin;
+ constexpr uint8_t ImuAddress = 0; // confirm SA0: 0x6A or 0x6B.
+@@ -144,7 +153,7 @@ constexpr bool AutoResumeAfterObstacle = true; // only for non-latching stops.
+ // Layer 3: all network I/O runs in one low-priority worker, never the control loop.
+ constexpr char BackendBaseUrl[] = "https://libot-8okb.onrender.com";
+ constexpr char RobotId[] = "robot1";
+-constexpr char FirmwareVersion[] = "atlas-v1-layer3";
++constexpr char FirmwareVersion[] = "atlas-v1-ccps";
+ constexpr const char* DeviceKey = ATLAS_DEVICE_KEY;
+ constexpr const char* TlsCa = ATLAS_TLS_CA;
+ constexpr float BackendStepCm = 0.0f; // Intentionally UNCONFIGURED; no assumed distance.
+diff --git a/hardware/Atlas/src/BackendClient.cpp b/hardware/Atlas/src/BackendClient.cpp
+index 16b3312..ed544db 100644
+--- a/hardware/Atlas/src/BackendClient.cpp
++++ b/hardware/Atlas/src/BackendClient.cpp
+@@ -284,7 +284,15 @@ bool BackendClient::sendResult(const Result& r) {
+         m["left_direction"] = direction(r.leftDirection); m["right_direction"] = direction(r.rightDirection);
+     }
+     if (!r.guidance && r.sensors.validMask) addSensors(doc["sensor_readings"].to<JsonObject>(), r.sensors);
+-    if (r.error[0]) doc["error"] = r.error;
++    // Existing error field only: no unsupported telemetry/schema extension.
++    // All diagnostic values are frozen with the original result, so retries match.
++    char diagnostic[192];
++    if(r.status==ResultStatus::Failed&&r.confidence.reasons) {
++        snprintf(diagnostic,sizeof(diagnostic),"%s%sCCPS reasons=0x%08lx trust=%u clearance=%u",
++            r.error,r.error[0]?"; ":"",static_cast<unsigned long>(r.confidence.reasons),
++            static_cast<unsigned>(r.confidence.trust),static_cast<unsigned>(r.confidence.clearance));
++        doc["error"]=diagnostic;
++    } else if (r.error[0]) doc["error"] = r.error;
+     if (r.guidance) {
+         if (!postDocument("/guidance/result", doc, true) || !responseDocument_["acknowledged"].is<bool>() ||
+             !responseDocument_["acknowledged"].as<bool>()) return false;
+diff --git a/hardware/Atlas/src/BackendClient.h b/hardware/Atlas/src/BackendClient.h
+index 5624e89..dadbf9e 100644
+--- a/hardware/Atlas/src/BackendClient.h
++++ b/hardware/Atlas/src/BackendClient.h
+@@ -39,6 +39,7 @@ public:
+         int64_t capturedAtUs = 0;
+     };
+     struct Result {
++        AtlasConfidence::Decision confidence; // immutable local diagnostic, copied with existing result queue.
+         char id[37] = {};
+         char recordingId[37] = {};
+         uint32_t sequence = 0;
+diff --git a/hardware/Atlas/src/CheckpointManager.cpp b/hardware/Atlas/src/CheckpointManager.cpp
+index 9f86846..5fc0da6 100644
+--- a/hardware/Atlas/src/CheckpointManager.cpp
++++ b/hardware/Atlas/src/CheckpointManager.cpp
+@@ -8,9 +8,11 @@ void CheckpointManager::reset() {
+     retries_ = validatedCount_ = 0;
+     expected_ = Evidence{};
+     observed_ = Evidence{};
++    assessment_=Assessment{};
+ }
+ 
+ void CheckpointManager::begin(uint32_t nowMs, const Evidence* expected) {
++    assessment_=Assessment{};
+     expected_ = expected ? *expected : Evidence{};
+     observed_ = Evidence{};
+     attemptAtMs_ = nowMs;
+@@ -22,6 +24,8 @@ void CheckpointManager::begin(uint32_t nowMs, const Evidence* expected) {
+ CheckpointManager::Result CheckpointManager::update(
+     const MotionController::Progress& p, const SensorManager& sensors, uint32_t nowMs) {
+     if (!active_ || result_ != Result::Waiting) return result_;
++    assessment_=Assessment{};
++    if(p.state==MotionController::State::Complete) assessment_.level=EvidenceLevel::CommandComplete;
+     // Reject an overrun or unequal wheel travel; re-observing cannot fix odometry.
+     const float lt = p.leftTargetCm > 0 ? p.leftTargetCm : p.targetCm;
+     const float rt = p.rightTargetCm > 0 ? p.rightTargetCm : p.targetCm;
+@@ -30,8 +34,18 @@ CheckpointManager::Result CheckpointManager::update(
+         fabsf(p.rightCm - rt) > CheckpointDistanceToleranceCm ||
+         fabsf((p.leftCm - lt) - (p.rightCm - rt)) > CheckpointWheelMismatchCm) {
+         result_ = Result::Failed;
++        assessment_.level=EvidenceLevel::Rejected; assessment_.reasons=AtlasConfidence::Distance|AtlasConfidence::WheelDisagreement;
+         return result_;
+     }
++    assessment_.wheelConsistent=true;
++    assessment_.headingAvailable=headingAvailable_;
++    assessment_.headingConsistent=headingConsistent_;
++    assessment_.uncertaintyAcceptable=uncertaintyAcceptable_;
++    if(navigationProvided_&&(!headingAvailable_||!headingConsistent_||!uncertaintyAcceptable_)) {
++        result_=Result::Failed; assessment_.level=EvidenceLevel::Rejected;
++        assessment_.reasons=(!headingAvailable_?AtlasConfidence::Missing:AtlasConfidence::Heading)|
++            (!uncertaintyAcceptable_?AtlasConfidence::Uncertainty:0u); return result_;
++    }
+     bool consistent = p.state == MotionController::State::Complete;
+     observed_ = Evidence{};
+     for (uint8_t i = 0; i < SensorCount; ++i) {
+@@ -41,19 +55,25 @@ CheckpointManager::Result CheckpointManager::update(
+         const bool fresh = r.valid && !r.faulted &&
+             static_cast<int32_t>(r.timestampMs - attemptAtMs_) >= static_cast<int32_t>(CheckpointSettleMs);
+         const bool clear = fresh && r.distanceCm >= ObstacleStopCm[i] + ObstacleHysteresisCm;
++        if(fresh) assessment_.freshMask|=1U<<i;
++        if(fresh&&!clear) { assessment_.clearance=AtlasConfidence::Clearance::Blocked; assessment_.reasons|=AtlasConfidence::Obstruction; }
+         if (clear) {
+             observed_.rangesCm[i] = r.distanceCm;
+             observed_.validMask |= static_cast<uint8_t>(1U << i);
+         } else consistent = false;
+         if ((expected_.validMask & (1U << i)) &&
+             (!clear || fabsf(r.distanceCm - expected_.rangesCm[i]) > CheckpointSensorToleranceCm))
+-            consistent = false;
++            { consistent = false; assessment_.reasons|=AtlasConfidence::Checkpoint; }
++        else if(expected_.validMask&(1U<<i)) assessment_.environmentMask|=1U<<i;
+     }
+     if (consistent) {
+         result_ = Result::Valid;
++        assessment_.clearance=AtlasConfidence::Clearance::Clear;
++        assessment_.reasons=AtlasConfidence::None;
++        assessment_.level=expected_.validMask?EvidenceLevel::EnvironmentSupported:EvidenceLevel::OdometricallyConsistent;
+         if (validatedCount_ < UINT8_MAX) ++validatedCount_;
+     } else if (nowMs - attemptAtMs_ >= CheckpointAttemptTimeoutMs) {
+-        if (retries_ >= CheckpointMaxRetries) result_ = Result::Failed;
++        if (retries_ >= CheckpointMaxRetries) { result_ = Result::Failed; assessment_.level=EvidenceLevel::Uncertain; }
+         else { ++retries_; attemptAtMs_ = nowMs; }
+     }
+     return result_;
+diff --git a/hardware/Atlas/src/CheckpointManager.h b/hardware/Atlas/src/CheckpointManager.h
+index 48f5450..72c72ab 100644
+--- a/hardware/Atlas/src/CheckpointManager.h
++++ b/hardware/Atlas/src/CheckpointManager.h
+@@ -11,6 +11,18 @@ public:
+         uint8_t validMask = 0;
+     };
+     enum class Result : uint8_t { Waiting, Valid, Failed };
++    enum class EvidenceLevel : uint8_t { CommandComplete, OdometricallyConsistent, EnvironmentSupported, Uncertain, Rejected };
++    struct Assessment {
++        EvidenceLevel level=EvidenceLevel::Uncertain;
++        AtlasConfidence::Clearance clearance=AtlasConfidence::Clearance::Unknown;
++        uint32_t reasons=AtlasConfidence::Missing;
++        uint8_t freshMask=0,environmentMask=0;
++        bool wheelConsistent=false,headingAvailable=false,headingConsistent=false,uncertaintyAcceptable=false;
++    };
++    const Assessment& assessment() const { return assessment_; }
++    void navigationEvidence(bool available,bool consistent,bool uncertaintyAcceptable) {
++        navigationProvided_=true; headingAvailable_=available; headingConsistent_=consistent; uncertaintyAcceptable_=uncertaintyAcceptable;
++    }
+ 
+     void reset();
+     void begin(uint32_t nowMs, const Evidence* expected = nullptr);
+@@ -28,4 +40,6 @@ private:
+     uint8_t retries_ = 0;
+     uint8_t validatedCount_ = 0;
+     uint32_t attemptAtMs_ = 0;
++    Assessment assessment_;
++    bool navigationProvided_=false,headingAvailable_=false,headingConsistent_=false,uncertaintyAcceptable_=false;
+ };
+diff --git a/hardware/Atlas/src/ImuManager.cpp b/hardware/Atlas/src/ImuManager.cpp
+index 298939a..2097807 100644
+--- a/hardware/Atlas/src/ImuManager.cpp
++++ b/hardware/Atlas/src/ImuManager.cpp
+@@ -1,5 +1,6 @@
+ #include "ImuManager.h"
+ #include <Wire.h>
++#include <esp_timer.h>
+ 
+ using namespace AtlasConfig;
+ 
+@@ -37,7 +38,7 @@ bool writeRegister(uint8_t reg, uint8_t value) {
+ }
+ 
+ bool ImuManager::begin() {
+-    if (!ImuDiagnosticsEnabled) return true;
++    if (!ImuDiagnosticsEnabled && !ImuNavigationEnabled) return true;
+     if (samples_) return task_ != nullptr;
+     samples_ = xQueueCreate(1, sizeof(Reading));
+     if (!samples_) return false;
+@@ -50,9 +51,10 @@ bool ImuManager::begin() {
+ 
+ ImuManager::Reading ImuManager::reading(uint32_t nowMs) const {
+     Reading result;
+-    if (ImuDiagnosticsEnabled) {
++    if (ImuDiagnosticsEnabled || ImuNavigationEnabled) {
+         result.error = Error::Configuration;
+         if (samples_) xQueuePeek(samples_, &result, 0);
++        nowMs=millis(); // worker can publish after the caller captured its timestamp.
+         if (result.valid && nowMs - result.timestampMs > ImuMaximumAgeMs) {
+             result.valid = false;
+             result.error = Error::Stale;
+@@ -64,6 +66,7 @@ ImuManager::Reading ImuManager::reading(uint32_t nowMs) const {
+ void ImuManager::workerEntry(void* context) { static_cast<ImuManager*>(context)->worker(); }
+ 
+ void ImuManager::worker() {
++    AtlasConfidence::ImuIntegration integration(ImuNavigationParameters);
+     Reading sample;
+     sample.error = Error::Bus;
+     bool ready = Wire.begin(ImuSdaPin, ImuSclPin, ImuBusHz);
+@@ -97,25 +100,35 @@ void ImuManager::worker() {
+     }
+     xQueueOverwrite(samples_, &sample);
+     for (;;) {
+-        vTaskDelay(pdMS_TO_TICKS(ImuSampleIntervalMs));
++        vTaskDelay(max(static_cast<TickType_t>(1),pdMS_TO_TICKS(ImuNavigationEnabled?ImuNavigationPollMs:ImuSampleIntervalMs)));
+         if (!ready) continue; // explicit reboot/reconfiguration required; never authorize movement.
+         if (!readRegisters(0x1E, &value, 1)) {
+             sample.valid = false;
+             sample.error = Error::Bus;
++            integration.invalidate();
+         } else if ((value & 3) == 3) {
+             uint8_t bytes[12];
+             sample.valid = readRegisters(0x22, bytes, sizeof(bytes));
+             sample.error = sample.valid ? Error::None : Error::Bus;
+             if (sample.valid) {
++                bool saturated=false;
+                 for (uint8_t i = 0; i < 6; ++i) {
+                     const int16_t raw = static_cast<int16_t>(static_cast<uint16_t>(bytes[i*2]) |
+                         (static_cast<uint16_t>(bytes[i*2+1]) << 8));
++                    if (raw==INT16_MIN || raw==INT16_MAX) saturated=true;
+                     if (i < 3) sample.angularRateMdps[i] = raw * 8.75f;
+                     else sample.accelerationMg[i-3] = raw * 0.061f;
+                 }
+                 sample.timestampMs = millis();
++                float rate[3];
++                for(uint8_t i=0;i<3;++i) rate[i]=sample.angularRateMdps[i]*(AtlasConfidence::Pi/180000.0f);
++                if(ImuNavigationEnabled) integration.sample(rate,sample.accelerationMg,
++                    static_cast<uint64_t>(esp_timer_get_time()),stationary_.load(),saturated);
++            } else {
++                integration.invalidate();
+             }
+         }
++        sample.navigation=integration.evidence();
+         xQueueOverwrite(samples_, &sample); // no new DRDY keeps actual age; accessor rejects stale.
+     }
+ }
+diff --git a/hardware/Atlas/src/ImuManager.h b/hardware/Atlas/src/ImuManager.h
+index 9195e19..12fd535 100644
+--- a/hardware/Atlas/src/ImuManager.h
++++ b/hardware/Atlas/src/ImuManager.h
+@@ -4,6 +4,7 @@
+ #include <freertos/FreeRTOS.h>
+ #include <freertos/queue.h>
+ #include <freertos/task.h>
++#include <atomic>
+ 
+ // Dedicated I2C owner. The real-time loop only copies a bounded snapshot;
+ // missing IMU data is never substituted with a stationary/level measurement.
+@@ -16,12 +17,15 @@ public:
+         uint32_t timestampMs = 0;
+         bool valid = false;
+         Error error = Error::Disabled;
++        AtlasConfidence::ImuEvidence navigation;
+     };
+     bool begin();
+     Reading reading(uint32_t nowMs) const;
++    void setStationary(bool stationary) { stationary_.store(stationary); }
+ private:
+     static void workerEntry(void* context);
+     void worker();
+     QueueHandle_t samples_ = nullptr;
+     TaskHandle_t task_ = nullptr;
++    std::atomic<bool> stationary_{false};
+ };
+diff --git a/hardware/Atlas/src/MotionController.cpp b/hardware/Atlas/src/MotionController.cpp
+index e650f3d..0d4fe54 100644
+--- a/hardware/Atlas/src/MotionController.cpp
++++ b/hardware/Atlas/src/MotionController.cpp
+@@ -123,8 +123,10 @@ void MotionController::stopOutputs(StopMode mode) {
+ }
+ 
+ void MotionController::stop() {
++    const bool active=moving();
+     stopOutputs(NormalStopMode);
+     if (state_ != State::Failed) state_ = State::Stopped;
++    if(active) notify(EventKind::Stop);
+ }
+ 
+ void MotionController::emergencyStop(AtlasFault reason) {
+@@ -132,6 +134,7 @@ void MotionController::emergencyStop(AtlasFault reason) {
+     fault_ = reason;
+     state_ = State::Failed;
+     stopOutputs(EmergencyStopMode);
++    notify(EventKind::Fault);
+ }
+ 
+ void MotionController::setSafetyPermit(bool permitted) {
+@@ -140,6 +143,7 @@ void MotionController::setSafetyPermit(bool permitted) {
+ }
+ 
+ void MotionController::clearFailure() {
++    notify(EventKind::BeforeReset);
+     if (ready_) { fault_ = AtlasFault::None; state_ = State::Idle; }
+ }
+ 
+@@ -157,6 +161,19 @@ float MotionController::distanceFor(uint8_t side, uint32_t counts) const {
+     return positive(cpr) ? counts * (3.141592654f * WheelDiameterCm / cpr) : 0;
+ }
+ 
++AtlasConfidence::EncoderSnapshot MotionController::encoderSnapshot() {
++    AtlasConfidence::EncoderSnapshot s;
++    const uint32_t before=static_cast<uint32_t>(esp_timer_get_time());
++    for (uint8_t i=0;i<2;++i) {
++        portENTER_CRITICAL(&encoders_[i].lock);
++        s.count[i]=encoders_[i].counts; s.lastEdgeUs[i]=encoders_[i].lastEdgeUs;
++        s.seen[i]=encoders_[i].seenEdge;
++        portEXIT_CRITICAL(&encoders_[i].lock);
++    }
++    s.capturedUs=static_cast<uint32_t>(esp_timer_get_time()); s.spanUs=s.capturedUs-before;
++    return s;
++}
++
+ MotionController::Progress MotionController::progress() {
+     uint32_t left, right;
+     encoderCounts(left, right);
+@@ -168,10 +185,11 @@ MotionController::Progress MotionController::progress() {
+     return {state_, kind_, l, r, targetCm_, fraction, lt, rt};
+ }
+ 
+-bool MotionController::start(float targetCm, Kind kind, uint16_t duty, bool resuming) {
++bool MotionController::start(float targetCm, Kind kind, uint16_t duty, bool resuming, bool emit) {
+     const uint32_t nowMs = millis();
+     if (!ready_ || !safetyPermit_ || moving() || fault_ != AtlasFault::None ||
+         !distanceCalibrated() || !positive(targetCm) || targetCm <= DistanceToleranceCm ||
++        dutyCeiling_<MinimumDriveDuty ||
+         targetCm > MaximumMoveCm || duty < MinimumDriveDuty || duty > MaxDuty ||
+         nowMs - stoppedAtMs_ < DirectionSettleMs) return false;
+     // Release a previous brake before ramping from zero. Otherwise clearing just
+@@ -186,6 +204,9 @@ bool MotionController::start(float targetCm, Kind kind, uint16_t duty, bool resu
+     startedAtMs_ = lastControlMs_ = nowMs;
+     state_ = State::Moving;
+     resumable_ = true;
++    if(resuming) ++attempt_; else { ++movementId_; attempt_=0; }
++    energized_=false;
++    if(emit) notify(resuming?EventKind::Resume:EventKind::Start);
+     return true; // hardware output is deferred until the next safety-checked update.
+ }
+ 
+@@ -214,8 +235,9 @@ bool MotionController::replayTicks(uint32_t left, uint32_t right, Kind kind) {
+         if (fabsf(l - target) > CheckpointDistanceToleranceCm ||
+             fabsf(r - target) > CheckpointDistanceToleranceCm) return false;
+     } else if (fabsf(l - r) > CheckpointWheelMismatchCm) return false;
+-    if (!start(fmaxf(l, r), kind, turn ? TurnDuty : CruiseDuty)) return false;
++    if (!start(fmaxf(l, r), kind, turn ? TurnDuty : CruiseDuty,false,false)) return false;
+     tickTarget_[0] = left; tickTarget_[1] = right; tickReplay_ = true;
++    notify(EventKind::Start);
+     return true;
+ }
+ 
+@@ -245,6 +267,7 @@ void MotionController::update(uint32_t nowMs) {
+     if (reached[0] && reached[1]) {
+         stopOutputs(NormalStopMode);
+         if (state_ != State::Failed) { state_ = State::Complete; resumable_ = false; }
++        notify(state_==State::Complete?EventKind::Complete:EventKind::Fault);
+         return;
+     }
+     for (uint8_t side = 0; side < 2; ++side) {
+@@ -252,13 +275,22 @@ void MotionController::update(uint32_t nowMs) {
+             duties_[side] = 0; // each wheel group stops at its own encoder target.
+         } else {
+             const float ratio = fminf(1.0f, remaining[side] / SlowdownDistanceCm);
+-            const float targetDuty = MinimumDriveDuty + (requestedDuty_ - MinimumDriveDuty) * ratio;
+-            duties_[side] = ramp(duties_[side], targetDuty, elapsed * 0.001f);
++            const float requested=fminf(requestedDuty_,dutyCeiling_);
++            const float targetDuty = MinimumDriveDuty + (requested - MinimumDriveDuty) * ratio;
++            duties_[side] = fminf(dutyCeiling_,ramp(duties_[side], targetDuty, elapsed * 0.001f));
+         }
+         const bool forward = kind_ == Kind::Forward ||
+             (kind_ == Kind::Clockwise90 && side == 0) ||
+             (kind_ == Kind::Counterclockwise90 && side == 1);
+         if (!drive(side, duties_[side], forward)) { emergencyStop(AtlasFault::Pwm); return; }
++        if(duties_[side]>0) energized_=true;
+     }
+     if (sleepInitialized_) digitalWrite(DriverSleepPin, HIGH);
+ }
++
++void MotionController::notify(EventKind kind) {
++    if(!observer_) return;
++    Event e; e.progress=progress(); e.encoder=encoderSnapshot(); e.timestampMs=millis();
++    e.movementId=movementId_; e.attempt=attempt_; e.event=kind; e.fault=fault_; e.energized=energized_;
++    observer_(observerContext_,e); // main-loop only: bounded observation, never an ISR.
++}
+diff --git a/hardware/Atlas/src/MotionController.h b/hardware/Atlas/src/MotionController.h
+index ebc3865..39fb843 100644
+--- a/hardware/Atlas/src/MotionController.h
++++ b/hardware/Atlas/src/MotionController.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "AtlasConfig.h"
++#include "ConfidenceTypes.h"
+ #include <freertos/FreeRTOS.h>
+ #include <freertos/portmacro.h>
+ 
+@@ -20,6 +21,18 @@ public:
+         float leftTargetCm = 0;
+         float rightTargetCm = 0;
+     };
++    enum class EventKind : uint8_t { Start, Resume, Complete, Stop, Fault, BeforeReset };
++    struct Event {
++        Progress progress;
++        AtlasConfidence::EncoderSnapshot encoder;
++        uint32_t movementId=0, timestampMs=0;
++        uint16_t attempt=0;
++        EventKind event=EventKind::Start;
++        AtlasFault fault=AtlasFault::None;
++        bool energized=false;
++    };
++    using Observer=void(*)(void*,const Event&);
++    void observe(Observer observer,void* context) { observer_=observer; observerContext_=context; }
+ 
+     bool begin();
+     void update(uint32_t nowMs);
+@@ -33,10 +46,12 @@ public:
+     void emergencyStop(AtlasFault reason = AtlasFault::EmergencyStop);
+     Progress progress();
+     void encoderCounts(uint32_t& left, uint32_t& right);
++    AtlasConfidence::EncoderSnapshot encoderSnapshot();
+     bool ready() const { return ready_; }
+     bool moving() const { return state_ == State::Moving; }
+     State state() const { return state_; }
+     Kind kind() const { return kind_; }
++    uint32_t movementId() const { return movementId_; }
+     AtlasFault fault() const { return fault_; }
+     uint32_t startedAtMs() const { return startedAtMs_; }
+     float leftDuty() const { return duties_[0]; }
+@@ -52,8 +67,16 @@ private:
+     } encoders_[2];
+     static void ARDUINO_ISR_ATTR encoderInterrupt(void* context);
+     void setSafetyPermit(bool permitted);
++    void setDutyCeiling(uint16_t duty) { dutyCeiling_=duty; }
++    uint16_t dutyCeiling_=AtlasConfig::MaxDuty;
+     void clearFailure();
+-    bool start(float targetCm, Kind kind, uint16_t duty, bool resuming = false);
++    bool start(float targetCm, Kind kind, uint16_t duty, bool resuming = false, bool notify = true);
++    void notify(EventKind event);
++    Observer observer_=nullptr;
++    void* observerContext_=nullptr;
++    uint32_t movementId_=0;
++    uint16_t attempt_=0;
++    bool energized_=false;
+     bool writePwm(uint8_t index, uint32_t duty);
+     bool drive(uint8_t side, float duty, bool forward);
+     void stopOutputs(AtlasConfig::StopMode mode);
+diff --git a/hardware/Atlas/src/Navigation.cpp b/hardware/Atlas/src/Navigation.cpp
+index c193e04..57c7029 100644
+--- a/hardware/Atlas/src/Navigation.cpp
++++ b/hardware/Atlas/src/Navigation.cpp
+@@ -27,6 +27,7 @@ bool Navigation::startManual(const Routes::Segment& segment) {
+     if ((state_ != State::Idle && state_ != State::Completed && state_ != State::Recording) ||
+         manualStarted_ || !safety_.canMove() || !Routes::validSegment(segment)) return false;
+     if (state_ == State::Recording && routes_.count() >= MaximumRouteSegments) return false;
++    if(!gate_.permit(context_,state_==State::Recording?routes_.count():step_,millis())) return false;
+     bool accepted = false;
+     switch (segment.kind) {
+         case MotionController::Kind::Forward: accepted = motion_.moveDistance(segment.distanceCm); break;
+@@ -75,7 +76,7 @@ bool Navigation::beginRecording() {
+ 
+ bool Navigation::replayTicks(uint32_t left, uint32_t right, MotionController::Kind kind) {
+     if ((state_ != State::Idle && state_ != State::Completed) || manualStarted_ || !safety_.canMove() ||
+-        !motion_.replayTicks(left, right, kind)) return false;
++        !gate_.permit(context_,step_,millis()) || !motion_.replayTicks(left, right, kind)) return false;
+     manualSegment_ = Routes::Segment{};
+     manualSegment_.kind = kind;
+     state_ = State::Manual;
+@@ -135,6 +136,10 @@ bool Navigation::pause() {
+ }
+ 
+ bool Navigation::resume() {
++    if(state_==State::Paused&&pauseReason_==PauseReason::Confidence&&!resumeRequested_) {
++        if(!gate_.verify(millis())) return false;
++        resumeRequested_=true; return true; // re-evaluation and safety grant happen in later loop, not here.
++    }
+     if (state_ != State::Paused || !safety_.canMove() || safety_.latched()) return false;
+     if (pauseReason_ == PauseReason::Obstacle && obstacles_.state() != ObstacleAvoidance::State::Clear) return false;
+     resumeRequested_ = true;
+@@ -149,7 +154,7 @@ void Navigation::continueActivity(uint32_t nowMs) {
+         const auto p = motion_.progress();
+         if (p.leftCm > (p.leftTargetCm > 0 ? p.leftTargetCm : p.targetCm) + CheckpointDistanceToleranceCm ||
+             p.rightCm > (p.rightTargetCm > 0 ? p.rightTargetCm : p.targetCm) + CheckpointDistanceToleranceCm) { fail(Error::Checkpoint); return; }
+-        if (!motion_.resume()) { fail(Error::ResumeDenied); return; }
++        if (!gate_.permit(context_,step_,nowMs) || !motion_.resume()) { fail(Error::ResumeDenied); return; }
+         manualNeedsResume_ = false;
+     }
+     obstacles_.finish();
+@@ -214,12 +219,16 @@ void Navigation::updateManual(uint32_t nowMs) {
+         if (motion_.state() != MotionController::State::Complete) return;
+         manualEndpoint_ = true;
+     }
+-    if (!manualValidating_) { checkpoints_.begin(nowMs); manualValidating_ = true; }
++    if (!manualValidating_) {
++        if(!gate_.endpointReady()) return;
++        checkpoints_.begin(nowMs); manualValidating_ = true;
++    }
+     auto progress = motion_.progress();
+     progress.state = MotionController::State::Complete;
+     const auto result = checkpoints_.update(progress, sensors_, nowMs);
+-    if (result == CheckpointManager::Result::Failed) { fail(Error::Checkpoint); return; }
++    if (result == CheckpointManager::Result::Failed) { gate_.assessCheckpoint(false,true,nowMs); fail(Error::Checkpoint); return; }
+     if (result != CheckpointManager::Result::Valid) return;
++    if(!gate_.assessCheckpoint(true,false,nowMs)) { fail(Error::Checkpoint); return; }
+     if (state_ == State::Recording) {
+         manualSegment_.endpoint = checkpoints_.evidence();
+         if (manualSegment_.kind == MotionController::Kind::Forward ||
+@@ -243,6 +252,8 @@ void Navigation::update(uint32_t nowMs) {
+     if (recording && nowMs - sessionAtMs_ >= RouteTimeoutMs) { fail(Error::Timeout); return; }
+     if (fault == AtlasFault::Obstacle && (manualStarted_ || state_ == State::Replaying) && state_ != State::Paused)
+         enterPause(PauseReason::Obstacle, nowMs);
++    if(activity&&state_!=State::Paused&&fault==AtlasFault::None&&!safety_.supervisorAllows(nowMs)&&!gate_.isSettling())
++        enterPause(PauseReason::Confidence,nowMs);
+     if (state_ == State::Paused) {
+         // An obstacle appearing during a user pause still needs a complete
+         // clearance window. Preserve the user's explicit-resume requirement.
+diff --git a/hardware/Atlas/src/Navigation.h b/hardware/Atlas/src/Navigation.h
+index 63ff764..a016f49 100644
+--- a/hardware/Atlas/src/Navigation.h
++++ b/hardware/Atlas/src/Navigation.h
+@@ -9,7 +9,7 @@
+ class Navigation {
+ public:
+     enum class State : uint8_t { Idle, Manual, Recording, Replaying, Paused, Completed, Fault };
+-    enum class PauseReason : uint8_t { None, User, Obstacle };
++    enum class PauseReason : uint8_t { None, User, Obstacle, Confidence };
+     enum class Error : uint8_t { None, Configuration, Safety, Motion, Checkpoint,
+                                  Route, RecordingFull, ObstacleLimit, Timeout, ResumeDenied };
+     Navigation(MotionController& motion, SensorManager& sensors, SafetyController& safety,
+@@ -29,6 +29,10 @@ public:
+     bool resume(); // request, not a synchronous wait or motor-permit override.
+     void cancel();
+     bool resetSafety(uint32_t nowMs); // explicit caller request; never resumes.
++    void executionGate(const AtlasConfidence::ExecutionGate& gate) { gate_=gate; routes_.executionGate(gate); }
++    void executionContext(uint32_t context,uint32_t step) { context_=context; step_=step; routes_.context(context); }
++    bool verifyConfidence(uint32_t now) { return !motion_.moving()&&gate_.verify(now); }
++    bool confidenceSettling() const { return gate_.isSettling(); }
+     State state() const { return state_; }
+     PauseReason pauseReason() const { return pauseReason_; }
+     Error error() const { return error_; }
+@@ -40,6 +44,8 @@ public:
+ 
+ private:
+     bool startManual(const Routes::Segment& segment);
++    AtlasConfidence::ExecutionGate gate_;
++    uint32_t context_=1,step_=0;
+     bool enterPause(PauseReason reason, uint32_t nowMs);
+     void continueActivity(uint32_t nowMs);
+     void updateManual(uint32_t nowMs);
+diff --git a/hardware/Atlas/src/Routes.cpp b/hardware/Atlas/src/Routes.cpp
+index 069c3a1..814a98e 100644
+--- a/hardware/Atlas/src/Routes.cpp
++++ b/hardware/Atlas/src/Routes.cpp
+@@ -85,6 +85,7 @@ void Routes::update(uint32_t nowMs) {
+     if (!started_ || needsResume_) {
+         if (nowMs - readyAtMs_ >= RouteStartTimeoutMs) { fail(Error::StartDenied); return; }
+         if (nowMs - readyAtMs_ < DirectionSettleMs) return;
++        if(!gate_.permit(context_,index_,nowMs)) return;
+         if (needsResume_) {
+             const auto p = motion_.progress();
+             if (p.leftCm > p.targetCm + CheckpointDistanceToleranceCm ||
+@@ -100,14 +101,16 @@ void Routes::update(uint32_t nowMs) {
+         endpointReached_ = true;
+     }
+     if (!validating_) {
++        if(!gate_.endpointReady()) return;
+         checkpoints_.begin(nowMs, &segments_[index_].endpoint);
+         validating_ = true;
+     }
+     auto progress = motion_.progress();
+     progress.state = MotionController::State::Complete; // endpoint survives an explicit safety reset at rest.
+     const auto result = checkpoints_.update(progress, sensors_, nowMs);
+-    if (result == CheckpointManager::Result::Failed) { fail(Error::Checkpoint); return; }
++    if (result == CheckpointManager::Result::Failed) { gate_.assessCheckpoint(false,true,nowMs); fail(Error::Checkpoint); return; }
+     if (result != CheckpointManager::Result::Valid) return;
++    if(!gate_.assessCheckpoint(true,false,nowMs)) { fail(Error::Checkpoint); return; }
+     ++index_;
+     started_ = validating_ = endpointReached_ = false;
+     if (index_ == count_) state_ = State::Complete;
+diff --git a/hardware/Atlas/src/Routes.h b/hardware/Atlas/src/Routes.h
+index 93708a2..4b89972 100644
+--- a/hardware/Atlas/src/Routes.h
++++ b/hardware/Atlas/src/Routes.h
+@@ -29,9 +29,13 @@ public:
+     uint8_t count() const { return count_; }
+     uint8_t index() const { return index_; } // zero based; count at completion.
+     const Segment* segment(uint8_t index) const { return index < count_ ? &segments_[index] : nullptr; }
++    void executionGate(const AtlasConfidence::ExecutionGate& gate) { gate_=gate; }
++    void context(uint32_t context) { context_=context; }
+ 
+ private:
+     bool launch(const Segment& segment);
++    AtlasConfidence::ExecutionGate gate_;
++    uint32_t context_=1;
+     void fail(Error error);
+     MotionController& motion_;
+     SensorManager& sensors_;
+diff --git a/hardware/Atlas/src/SafetyController.cpp b/hardware/Atlas/src/SafetyController.cpp
+index 9c48392..97871ac 100644
+--- a/hardware/Atlas/src/SafetyController.cpp
++++ b/hardware/Atlas/src/SafetyController.cpp
+@@ -43,6 +43,7 @@ void SafetyController::trip(AtlasFault fault, bool latch) {
+     fault_ = fault;
+     latched_ = latch;
+     permitted_ = false;
++    localPermit_=false;
+     motion_.emergencyStop(fault);
+ }
+ 
+@@ -50,6 +51,7 @@ void SafetyController::emergencyStop() { trip(AtlasFault::EmergencyStop, true);
+ 
+ bool SafetyController::reset(uint32_t nowMs) {
+     permitted_ = false;
++    localPermit_=false;
+     if (motion_.moving() || !motion_.ready() || !sensors_.ready() ||
+         pinConfigurationError() || tuningError() || !distanceCalibrated()) return false;
+     const AtlasFault sensorFault = inspectSensors(nowMs, true);
+@@ -66,7 +68,7 @@ bool SafetyController::reset(uint32_t nowMs) {
+ void SafetyController::update(uint32_t nowMs) {
+     const uint32_t gap = nowMs - lastUpdateMs_;
+     lastUpdateMs_ = nowMs;
+-    if (latched_) { permitted_ = false; return; }
++    if (latched_) { permitted_ = localPermit_ = false; return; }
+     // Sensor/obstacle stops are owned here and may be configured non-latching.
+     // Never let such an inhibit mask a new critical motor/control failure.
+     if (motion_.fault() != AtlasFault::None && motion_.fault() != AtlasFault::Sensor &&
+@@ -88,6 +90,7 @@ void SafetyController::update(uint32_t nowMs) {
+             // creating an automatic critical latch before the first four pings.
+             fault_ = sensorFault;
+             permitted_ = false;
++            localPermit_=false;
+             motion_.setSafetyPermit(false);
+         }
+         wasMoving_ = false;
+@@ -97,9 +100,8 @@ void SafetyController::update(uint32_t nowMs) {
+         motion_.clearFailure(); // only non-latched sensor/obstacle inhibits reach here.
+         fault_ = AtlasFault::None;
+     }
+-    permitted_ = true;
+-    motion_.setSafetyPermit(true);
+-    if (!moving) { wasMoving_ = false; return; }
++    localPermit_ = true;
++    if (!moving) { wasMoving_ = false; applyPermit(nowMs); return; }
+     uint32_t counts[2];
+     motion_.encoderCounts(counts[0], counts[1]);
+     if (!wasMoving_) {
+@@ -121,4 +123,21 @@ void SafetyController::update(uint32_t nowMs) {
+             return;
+         }
+     }
++    applyPermit(nowMs);
++}
++
++bool SafetyController::supervisorAllows(uint32_t now) const {
++    return AtlasConfig::ConfidenceObservationOnly || (supervisor_.allowed&&supervisor_.fresh(now)&&
++        supervisor_.dutyCeiling>=MinimumDriveDuty&&(!motion_.moving()||supervisor_.movementId==motion_.movementId()));
++}
++void SafetyController::applyPermit(uint32_t now) {
++    permitted_=localPermit_&&!latched_&&supervisorAllows(now);
++    motion_.setDutyCeiling(AtlasConfig::ConfidenceObservationOnly?MaxDuty:min(MaxDuty,supervisor_.dutyCeiling));
++    // Stop BEFORE withdrawing the low-level interlock; do not relabel a CCPS stop E_STOP.
++    if(!permitted_&&motion_.moving()) motion_.stop();
++    motion_.setSafetyPermit(permitted_);
++}
++void SafetyController::supervisorConstraint(const AtlasConfidence::Constraint& c,uint32_t now) {
++    supervisor_=c;
++    if(!supervisorAllows(now)) applyPermit(now);
+ }
+diff --git a/hardware/Atlas/src/SafetyController.h b/hardware/Atlas/src/SafetyController.h
+index a58053c..77bba8b 100644
+--- a/hardware/Atlas/src/SafetyController.h
++++ b/hardware/Atlas/src/SafetyController.h
+@@ -12,12 +12,18 @@ public:
+     void emergencyStop();
+     bool reset(uint32_t nowMs); // explicit only; never resumes the previous move.
+     bool canMove() const { return permitted_; }
++    bool localCanMove() const { return localPermit_; }
++    bool supervisorAllows(uint32_t now) const;
++    void supervisorConstraint(const AtlasConfidence::Constraint& constraint,uint32_t now);
+     AtlasFault fault() const { return fault_; }
+     bool latched() const { return latched_; }
+ 
+ private:
+     AtlasFault inspectSensors(uint32_t nowMs, bool requireAll);
+     void trip(AtlasFault fault, bool latch);
++    void applyPermit(uint32_t now);
++    AtlasConfidence::Constraint supervisor_;
++    bool localPermit_=false;
+     MotionController& motion_;
+     SensorManager& sensors_;
+     AtlasFault fault_ = AtlasFault::None;
+diff --git a/hardware/Atlas/src/TelemetryManager.cpp b/hardware/Atlas/src/TelemetryManager.cpp
+index 17b39f8..4924a21 100644
+--- a/hardware/Atlas/src/TelemetryManager.cpp
++++ b/hardware/Atlas/src/TelemetryManager.cpp
+@@ -165,6 +165,7 @@ BackendClient::Sensors TelemetryManager::capture(uint32_t nowMs) const {
+ BackendClient::Result TelemetryManager::result(const BackendClient::Command& c,
+     BackendClient::ResultStatus status, uint32_t nowMs) const {
+     BackendClient::Result r;
++    r.confidence=confidence_;
+     strlcpy(r.id, c.id, sizeof(r.id)); strlcpy(r.recordingId, c.recordingId, sizeof(r.recordingId));
+     r.sequence = c.sequence; r.status = status; r.capturedAtUs = BackendClient::utcNowUs();
+     r.sensors = capture(nowMs);
+@@ -319,7 +320,8 @@ void TelemetryManager::update(uint32_t nowMs) {
+         if ((phase_ == Phase::AwaitingPauseAck && ack.status == BackendClient::ResultStatus::Paused) ||
+             (phase_ == Phase::AwaitingResumeAck && ack.status == BackendClient::ResultStatus::Resumed)) {
+             if (strcmp(ack.controlId, controlId_)) continue;
+-            if (!ack.ok || !fresh(nowMs) || !safety_.canMove()) {
++            if (!ack.ok || !fresh(nowMs) || !safety_.localCanMove() ||
++                (phase_==Phase::AwaitingResumeAck&&!safety_.canMove())) {
+                 finish(false, "Control acknowledgement failed or safety interlock", nowMs); continue;
+             }
+             if (phase_ == Phase::AwaitingPauseAck) phase_ = Phase::Paused;
+@@ -338,6 +340,8 @@ void TelemetryManager::update(uint32_t nowMs) {
+             continue;
+         }
+         using M = MotionController::Kind;
++        navigation_.executionContext(AtlasConfidence::contextTag(active_.guidance?active_.sessionId:active_.recordingId,
++            active_.guidance?active_.routeId:AtlasConfig::RobotId),active_.sequence);
+         const M kind = active_.kind == K::Forward ? M::Forward : active_.kind == K::Backward ? M::Backward :
+             active_.kind == K::Left ? M::Counterclockwise90 : M::Clockwise90;
+         const bool ok = active_.guidance ? navigation_.replayTicks(active_.leftTicks, active_.rightTicks, kind) :
+@@ -348,11 +352,12 @@ void TelemetryManager::update(uint32_t nowMs) {
+         else finish(false, "Navigation rejected movement (state/calibration/safety)", nowMs);
+     }
+     if (phase_ != Phase::Idle && phase_ != Phase::AwaitingStart &&
+-        (!safety_.canMove() || navigation_.state() == Navigation::State::Fault))
++        (!safety_.localCanMove() || (!safety_.canMove()&&!navigation_.confidenceSettling()) || navigation_.state() == Navigation::State::Fault))
+         finish(false, "Safety interruption; no automatic resume", nowMs);
+     if (phase_ == Phase::Resuming && navigation_.state() != Navigation::State::Paused) phase_ = Phase::Running;
+     if (phase_ == Phase::Running) {
+-        if (!safety_.canMove() || navigation_.state() == Navigation::State::Fault || navigation_.state() == Navigation::State::Paused)
++        if (!safety_.localCanMove() || (!safety_.canMove()&&!navigation_.confidenceSettling()) ||
++            navigation_.state() == Navigation::State::Fault || navigation_.state() == Navigation::State::Paused)
+             finish(false, "Safety/navigation interruption; no automatic resume", nowMs);
+         else if (!navigation_.movementPending())
+             finish(navigation_.state() == Navigation::State::Completed, "", nowMs);
+diff --git a/hardware/Atlas/src/TelemetryManager.h b/hardware/Atlas/src/TelemetryManager.h
+index d81e281..d76758f 100644
+--- a/hardware/Atlas/src/TelemetryManager.h
++++ b/hardware/Atlas/src/TelemetryManager.h
+@@ -16,9 +16,13 @@ public:
+         : motion_(motion), sensors_(sensors), safety_(safety), navigation_(navigation) {}
+     bool begin();
+     void update(uint32_t nowMs);
++    void confidence(const AtlasConfidence::Decision& decision) { confidence_=decision; } // main-loop only.
+     bool connected() const { return network_.connected(); }
+     bool backendReady() const { return healthy_.load() && !deliveryFault_.load(); }
+ private:
++#ifdef ATLAS_HOST_TEST
++    friend struct TelemetryHarness; // compile-time host access only; no executable production test hook.
++#endif
+     struct Ack { char id[37]; char controlId[37]; BackendClient::ResultStatus status; bool ok; };
+     enum class Phase : uint8_t { Idle, AwaitingStart, Running, AwaitingPauseAck, Paused, AwaitingResumeAck, Resuming };
+     static void taskEntry(void* context);
+@@ -54,4 +58,5 @@ private:
+     char recent_[AtlasConfig::RecentCommandCapacity][37] = {};
+     uint8_t recentIndex_ = 0;
+     bool begun_ = false;
++    AtlasConfidence::Decision confidence_;
+ };
+diff --git a/hardware/Atlas/tests/host/Arduino.h b/hardware/Atlas/tests/host/Arduino.h
+index 8d25344..a989950 100644
+--- a/hardware/Atlas/tests/host/Arduino.h
++++ b/hardware/Atlas/tests/host/Arduino.h
+@@ -4,3 +4,18 @@
+ #include <ctime>
+ #define ARDUINO_ISR_ATTR
+ uint32_t millis();
++#include <algorithm>
++#include <cstring>
++using std::min;
++using std::max;
++constexpr int LOW=0,HIGH=1,INPUT=0,OUTPUT=1,INPUT_PULLUP=2,CHANGE=3,RISING=4,FALLING=5;
++void digitalWrite(int pin,int value);
++int digitalRead(int pin);
++void pinMode(int pin,int mode);
++void attachInterruptArg(int pin,void(*handler)(void*),void* context,int mode);
++bool ledcAttach(int pin,uint32_t frequency,uint8_t resolution);
++bool ledcWrite(int pin,uint32_t duty);
++bool ledcDetach(int pin);
++inline size_t strlcpy(char* to,const char* from,size_t size) {
++    const size_t n=std::strlen(from); if(size) { const size_t count=std::min(n,size-1); std::memcpy(to,from,count); to[count]=0; } return n;
++}
+diff --git a/hardware/Atlas/tests/host/freertos/FreeRTOS.h b/hardware/Atlas/tests/host/freertos/FreeRTOS.h
+index c20eb96..36c29d3 100644
+--- a/hardware/Atlas/tests/host/freertos/FreeRTOS.h
++++ b/hardware/Atlas/tests/host/freertos/FreeRTOS.h
+@@ -1,3 +1,11 @@
+ #pragma once
+ using portMUX_TYPE = int;
+ #define portMUX_INITIALIZER_UNLOCKED 0
++#define portENTER_CRITICAL(x) ((void)(x))
++#define portEXIT_CRITICAL(x) ((void)(x))
++#define portENTER_CRITICAL_ISR(x) ((void)(x))
++#define portEXIT_CRITICAL_ISR(x) ((void)(x))
++using BaseType_t=int;
++using TickType_t=unsigned;
++constexpr BaseType_t pdTRUE=1,pdPASS=1;
++#define pdMS_TO_TICKS(x) (x)
+diff --git a/hardware/Atlas/tests/host/navigation_tests.cpp b/hardware/Atlas/tests/host/navigation_tests.cpp
+index 1aa9cc9..a3e0218 100644
+--- a/hardware/Atlas/tests/host/navigation_tests.cpp
++++ b/hardware/Atlas/tests/host/navigation_tests.cpp
+@@ -21,7 +21,7 @@ unsigned launches = 0, resumes = 0;
+ uint32_t millis() { return sim::now; }
+ 
+ bool MotionController::begin() { ready_ = true; return true; }
+-bool MotionController::start(float target, Kind kind, uint16_t duty, bool resuming) {
++bool MotionController::start(float target, Kind kind, uint16_t duty, bool resuming, bool) {
+     if (!ready_ || !safetyPermit_ || moving() || fault_ != AtlasFault::None || sim::denied) return false;
+     if (!resuming) { sim::left = sim::right = 0; ++sim::launches; }
+     targetCm_ = target; kind_ = kind; requestedDuty_ = duty;
+@@ -73,6 +73,7 @@ SensorManager::Reading SensorManager::reading(SensorId, uint32_t now) const {
+ // Model the relevant real safety contract: a reset erases motion's terminal
+ // state, retains encoder baselines/target, and DOES NOT grant motion permission.
+ void SafetyController::begin(uint32_t now) { update(now); }
++bool SafetyController::supervisorAllows(uint32_t) const { return true; }
+ void SafetyController::update(uint32_t) {
+     fault_ = sim::fault; latched_ = sim::latched;
+     permitted_ = fault_ == AtlasFault::None && !latched_;
+@@ -97,6 +98,7 @@ struct Rig {
+     ObstacleAvoidance obstacles;
+     Navigation nav{motion, sensors, safety, routes, checkpoints, obstacles};
+     Rig() {
++        AtlasConfidence::ExecutionGate legacy; legacy.required=false; nav.executionGate(legacy);
+         sim::now = 1000; sim::left = sim::right = 0;
+         sim::complete = sim::failed = sim::denied = sim::stale = sim::latched = false;
+         sim::sensorsValid = true; sim::range = 100; sim::fault = AtlasFault::None;
+@@ -202,6 +204,19 @@ void checkpoint_evidence_and_settle() {
+     CHECK(r.checkpoints.update(p, r.sensors, sim::now) == CheckpointManager::Result::Waiting);
+     sim::range = 200;
+     CHECK(r.checkpoints.update(p, r.sensors, sim::now) == CheckpointManager::Result::Valid);
++    CHECK(r.checkpoints.assessment().level == CheckpointManager::EvidenceLevel::EnvironmentSupported);
++    CHECK(r.checkpoints.assessment().clearance == AtlasConfidence::Clearance::Clear);
++}
++void checkpoint_navigation_evidence_is_not_position_fix() {
++    Rig r;
++    MotionController::Progress p{MotionController::State::Complete, MotionController::Kind::Forward, 10, 10, 10, 1};
++    r.checkpoints.navigationEvidence(true,false,true); r.checkpoints.begin(sim::now);
++    CHECK(r.checkpoints.update(p,r.sensors,sim::now)==CheckpointManager::Result::Failed);
++    CHECK(r.checkpoints.assessment().reasons&AtlasConfidence::Heading);
++    r.checkpoints.navigationEvidence(true,true,true); r.checkpoints.begin(sim::now);
++    sim::now+=CheckpointSettleMs;
++    CHECK(r.checkpoints.update(p,r.sensors,sim::now)==CheckpointManager::Result::Valid);
++    CHECK(r.checkpoints.assessment().level==CheckpointManager::EvidenceLevel::OdometricallyConsistent);
+ }
+ void obstacle_clearance_and_limits() {
+     Rig r; r.obstacles.begin(sim::now); r.obstacles.update(r.sensors, sim::now);
+@@ -332,7 +347,7 @@ int main() {
+         reset_between_segments_never_launches, reset_cannot_erase_raw_motion_failure,
+         repeated_reset_does_not_extend_pause_deadline, cancel_after_reset_cannot_resume,
+         route_start_denied_is_bounded, route_total_deadline_spans_segments, recording_session_deadline,
+-        checkpoint_failure_discards_draft_and_recovers};
++        checkpoint_failure_discards_draft_and_recovers, checkpoint_navigation_evidence_is_not_position_fix};
+     unsigned failed = 0;
+     for (auto test : tests) {
+         try { test(); }
+diff --git a/hardware/Atlas/tests/host/run.py b/hardware/Atlas/tests/host/run.py
+index 86b6a6a..d8b6d8e 100644
+--- a/hardware/Atlas/tests/host/run.py
++++ b/hardware/Atlas/tests/host/run.py
+@@ -1,4 +1,4 @@
+-"""Compile real Layer 2 sources on the host; never connect to an ESP32.
++"""Compile real navigation, motion, safety and CCPS sources; never connect to an ESP32.
+ 
+ Usage: python tests/host/run.py --cxx /path/to/clang++
+ Also accepts g++ or Zig's executable. No packages are installed.
+@@ -15,7 +15,8 @@ import tempfile
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--cxx', default=os.environ.get('CXX', 'c++'))
+-    parser.add_argument('--source-dir', type=Path, help='Optional baseline source snapshot')
++    parser.add_argument('--source-dir', type=Path, help='Optional source tree matching these test interfaces')
++    parser.add_argument('--optimization', choices=('O0','Os'), default='O0')
+     args = parser.parse_args()
+     here = Path(__file__).resolve().parent
+     source = args.source_dir or here.parents[1] / 'src'
+@@ -29,6 +30,9 @@ def main():
+                 shutil.copyfile(source / (name + suffix), work / (name + suffix))
+         for name in ('MotionController.h', 'SensorManager.h', 'SafetyController.h'):
+             shutil.copyfile(source / name, work / name)
++        shutil.copyfile(source / 'ConfidenceTypes.h', work / 'ConfidenceTypes.h')
++        for name in ('SensorConfidence.h', 'ImuIntegration.h', 'ConfidenceSupervisor.h', 'MotionConfidence.h', 'MovementHistory.h', 'PoseEstimator.h'):
++            shutil.copyfile(source / name, work / name)
+         config = (source / 'AtlasConfig.h').read_text(encoding='utf-8')
+         # Never include private provisioning. All production software limits stay
+         # unchanged; only physical calibration is simulated in this TEMP copy.
+@@ -47,8 +51,78 @@ def main():
+                     '-I' + str(here), '-I' + str(work), str(here / 'navigation_tests.cpp')]
+         command += [str(work / (name + '.cpp')) for name in modules]
+         command += ['-o', str(executable)]
+-        subprocess.run(command, check=True)
+-        return subprocess.run([str(executable)], check=False).returncode
++        subprocess.run(command + ['-'+args.optimization], check=True)
++        subprocess.run([str(executable)], check=True)
++        for test in sorted(here.glob('*_tests.cpp')):
++            if test.name in ('navigation_tests.cpp', 'hardware_integration_tests.cpp', 'telemetry_integration_tests.cpp'):
++                continue
++            executable = work / (test.stem + ('.exe' if os.name == 'nt' else ''))
++            command = [args.cxx]
++            if Path(args.cxx).stem.lower() == 'zig':
++                command.append('c++')
++            command += ['-std=c++17', '-Wall', '-Wextra', '-Werror', '-I' + str(source), str(test)]
++            # Pure confidence suites link the production hardware-independent modules.
++            pure = ('SensorConfidence', 'ImuIntegration', 'MotionConfidence', 'MovementHistory', 'PoseEstimator', 'ConfidenceSupervisor')
++            command += [str(source / (name + '.cpp')) for name in pure if (source / (name + '.cpp')).exists()]
++            command += ['-o', str(executable)]
++            subprocess.run(command + ['-'+args.optimization], check=True)
++            subprocess.run([str(executable)], check=True)
++        # Real motion, safety, navigation AND CCPS; only hardware/IMU I/O is stubbed.
++        # These explicit synthetic values exist solely in the isolated TEMP copy.
++        for name in ('MotionController', 'SafetyController', 'ConfidenceIntegration'):
++            for suffix in ('.h', '.cpp'):
++                shutil.copyfile(source / (name + suffix), work / (name + suffix))
++        shutil.copyfile(source / 'ImuManager.h', work / 'ImuManager.h')
++        start = config.index('inline const char* pinConfigurationError()')
++        end = config.index('inline const char* tuningError()', start)
++        hardware_config = config[:start] + 'inline const char* pinConfigurationError() { return nullptr; }\n' + config[end:]
++        replacements = {
++            'constexpr MotorPins LeftMotor = {UnconfiguredPin, UnconfiguredPin, false};': 'constexpr MotorPins LeftMotor = {18,19,false};',
++            'constexpr MotorPins RightMotor = {UnconfiguredPin, UnconfiguredPin, false};': 'constexpr MotorPins RightMotor = {21,22,false};',
++            'constexpr int LeftEncoderPin = UnconfiguredPin;': 'constexpr int LeftEncoderPin = 32;',
++            'constexpr int RightEncoderPin = UnconfiguredPin;': 'constexpr int RightEncoderPin = 33;',
++            'constexpr EncoderEdges CountEdges = EncoderEdges::Unconfigured;': 'constexpr EncoderEdges CountEdges = EncoderEdges::Rising;',
++            'constexpr bool SingleSignalEncodersConfirmed = false;': 'constexpr bool SingleSignalEncodersConfirmed = true;',
++            'constexpr float LeftCountsPerWheelRevolution = 0.0f;': 'constexpr float LeftCountsPerWheelRevolution = 100.0f;',
++            'constexpr float RightCountsPerWheelRevolution = 0.0f;': 'constexpr float RightCountsPerWheelRevolution = 100.0f;',
++            'constexpr float WheelTrackCm = 0.0f;': 'constexpr float WheelTrackCm = 10.0f;',
++            'constexpr float ClockwiseTurnScale = 0.0f;': 'constexpr float ClockwiseTurnScale = 1.0f;',
++            'constexpr float CounterclockwiseTurnScale = 0.0f;': 'constexpr float CounterclockwiseTurnScale = 1.0f;',
++            'constexpr AtlasConfidence::ImuParameters ImuNavigationParameters{};': '''constexpr AtlasConfidence::ImuParameters ImuNavigationParameters = [] {
++                AtlasConfidence::ImuParameters p; p.mounting[0]=p.mounting[4]=p.mounting[8]=1;
++                p.stationaryRate=0.1f; p.accelerationToleranceMg=20; p.maximumNoise=0.01f;
++                p.calibrationSamples=4; p.maximumGapUs=40000; p.calibrationValidityUs=100000000; return p; }();''',
++            'constexpr AtlasConfidence::SupervisorParameters ConfidenceCalibration{};': '''constexpr AtlasConfidence::SupervisorParameters ConfidenceCalibration = [] {
++                AtlasConfidence::SupervisorParameters p; p.motion={2,0.2f,0.2f,0.3f,0.5f}; p.encoder.maximumEdgesPerSecond=10000;
++                p.encoder.progressMismatch=0.2f; p.pose={0.01f,0.001f,0.01f,0.001f,0.001f,0.001f,0.001f,40000};
++                p.maximumPositionVariance=100; p.maximumYawVariance=10; p.warningConfidence=0.5f;
++                p.historyBias=p.historySlope=1; p.routeDistanceTolerance=10; p.routeYawTolerance=0.5f;
++                p.alignmentUs=40000; p.cautionDuty=50; p.warningSamples=3; p.verificationSamples=2; p.recoveryLimit=2; return p; }();''',
++        }
++        for old, new in replacements.items():
++            assert old in hardware_config, 'Synthetic fixture anchor changed: ' + old
++            hardware_config = hardware_config.replace(old, new, 1)
++        (work / 'AtlasConfig.h').write_text(hardware_config, encoding='utf-8')
++        executable = work / ('hardware-integration.exe' if os.name == 'nt' else 'hardware-integration')
++        command = [args.cxx] + (['c++'] if Path(args.cxx).stem.lower() == 'zig' else [])
++        command += ['-std=c++17', '-Wall', '-Wextra', '-Werror', '-DCONFIG_IDF_TARGET_ESP32=1',
++                    '-I'+str(here), '-I'+str(work), str(here / 'hardware_integration_tests.cpp')]
++        command += [str(work / (name+'.cpp')) for name in modules + ('MotionController','SafetyController','ConfidenceIntegration')]
++        command += [str(source / (name+'.cpp')) for name in pure] + ['-o', str(executable)]
++        subprocess.run(command + ['-'+args.optimization], check=True)
++        subprocess.run([str(executable)], check=True)
++        for name in ('TelemetryManager.h','TelemetryManager.cpp','BackendClient.h'):
++            shutil.copyfile(source / name, work / name)
++        shutil.copyfile(here / 'network_stubs/NetworkManager.h', work / 'NetworkManager.h')
++        executable = work / ('telemetry-integration.exe' if os.name == 'nt' else 'telemetry-integration')
++        command = [args.cxx] + (['c++'] if Path(args.cxx).stem.lower() == 'zig' else [])
++        command += ['-std=c++17','-Wall','-Wextra','-Werror','-DCONFIG_IDF_TARGET_ESP32=1','-DATLAS_HOST_TEST=1',
++                    '-I'+str(here / 'network_stubs'),'-I'+str(here),'-I'+str(work),str(here / 'telemetry_integration_tests.cpp')]
++        command += [str(work / (name+'.cpp')) for name in modules + ('MotionController','SafetyController','ConfidenceIntegration','TelemetryManager')]
++        command += [str(source / (name+'.cpp')) for name in pure] + ['-o',str(executable)]
++        subprocess.run(command + ['-'+args.optimization], check=True)
++        subprocess.run([str(executable)], check=True)
++        return 0
+ 
+ 
+ if __name__ == '__main__':

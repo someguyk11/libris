@@ -1,0 +1,18 @@
+[
+  {
+    "suite": "pure_diagnostics",
+    "compile_exit": 1
+  },
+  {
+    "suite": "integration_diagnostics",
+    "compile_exit": 0,
+    "test_exit": 1,
+    "output": "coast exact ticks: nav=5 fault=0 record ticks=51/51\nFAIL exact_tick_coast_rejection: r.nav.state()!=Navigation::State::Completed\nPASS lost_reset_denied\nreverse asym ticks: nav=4 reasons=0x400\nFAIL reverse_asymmetric_ticks: r.nav.state()==Navigation::State::Completed\nPASS blocked_retains_trust\npersistent sensor: trust=4 permit=0 reasons=0x4042\nFAIL persistent_sensor_human: d.permissions&AtlasConfidence::Human\nAUDIT integration: 2/5 scenarios pass\n"
+  },
+  {
+    "suite": "telemetry_diagnostics",
+    "compile_exit": 0,
+    "test_exit": 1,
+    "output": "backend coast: status=1 ticks=51/51\nFAIL backend_coast_reject: result.status==BackendClient::ResultStatus::Failed\nFAIL lost_failure_copy_reconnect: xQueueReceive(t.results_,&r,0)==pdTRUE\nAUDIT telemetry: 0/2 scenarios pass\n"
+  }
+]
