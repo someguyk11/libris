@@ -1,5 +1,66 @@
 # ESP32 AP local drive
 
+## Supervised encoder-only on-ground test
+
+Use the **`atlas-encoder-ground-test`** PlatformIO environment, not
+`atlas-local-drive` or `atlas-motor-bench`, for the explicitly requested
+ultrasonic-free straight recording/replay test:
+
+```powershell
+pio run -e atlas-encoder-ground-test
+# After checking wiring and clearing the test area, upload explicitly:
+pio run -e atlas-encoder-ground-test -t upload
+```
+
+- Motors: left GPIO26/25, right GPIO27/33; input fanout operator-confirmed.
+  Driver nSLEEP pins remain GPIO19/18.
+- Photointerrupters: left GPIO34, right GPIO35, `CHANGE` interrupts, **40 edges
+  per wheel revolution** (20 slots, disc-to-wheel ratio 1:1). No internal pulls:
+  provide defined 3.3 V-safe signals/external pull-ups if required by the outputs.
+- Wheel diameter remains 6.5 cm (~0.5105 cm/edge). The existing distance
+  calibration guard compares edge size to the **2 cm checkpoint tolerance**,
+  not the 0.5 cm movement-stop tolerance; neither tolerance was widened.
+- **No obstacle detection, ultrasonic GPIO activity, sensor start inhibition,
+  or ultrasonic endpoint comparison in this build.** Readings stay invalid,
+  never fabricated as clear. Independent encoder endpoint/mismatch checks and
+  the 200 ms settling interval remain. Coast can affect stopping distance.
+- Only forward/backward 20 cm-per-press steps; **turns are rejected** even if
+  turn geometry is configured later. Normal build still requires measured track
+  width and CW/CCW calibration for 90-degree turns.
+- PWM/ramp limits, per-wheel stall checks, control/movement/route timeouts,
+  explicit E-stop/reset, and 800 ms browser deadman remain enabled. The firmware
+  does not command movement automatically after upload, boot, save or selection.
+- Test routes use NVS namespace **`atlasedgetest`**, three slots of 32 segments,
+  schema v3 `[kind, measuredCm]`, and the unchanged 3000-byte route limit. Normal
+  routes remain in `atlasroutes`; neither build accepts the other's schema.
+  Both namespaces share the existing 20 KiB NVS partition, so either can fill it.
+- The local page and serial boot message identify the sensor-free test mode.
+  Backend commands remain excluded by the existing exclusive local-drive mode.
+
+### Ground-test checklist (requires physical verification)
+
+1. Confirm each encoder produces ~40 edges per full wheel revolution; check
+   output voltage/pull-ups and motor direction before recording a route.
+2. Keep an immediate **physical motor-power cutoff** available, clear the area,
+   and keep Atlas in sight. No software stop can detect an unseen collision.
+3. Join `Libot_Setup`, open `/drive`, select Movement/enable drive if Wi-Fi setup
+   mode is active, and check the encoder-only warning and safety-ready status.
+4. Test one 20 cm forward and backward step; measure real distance and coast.
+   Check STOP/E-stop, explicit reset without resume, and heartbeat-loss stopping.
+5. Start recording, hold Front/Back until validated, then release. Repeat a few
+   steps, name the path and save; wait for confirmed successful storage.
+6. Move Atlas manually back to the original start **and heading**. Select Replay,
+   confirm starting placement, click Replay, and keep the page foregrounded.
+   Compare real travel with the recording; pulse agreement does not detect slip.
+7. Verify saved routes survive a power cycle, full slots replace oldest only
+   when requested, and interrupted replay never auto-resumes. Reposition before
+   restarting an interrupted route.
+
+Host validation: `python tests/host/run_encoder_ground.py --cxx <compiler>` runs
+real control, safety, navigation, local command and route-store code with fake
+GPIO/PWM/time/queues and in-memory Preferences. It is **not** a flash endurance,
+power-loss, electrical, physical stopping-distance or ground-replay test.
+
 ## Connect
 
 1. Build/upload the **atlas-local-drive** PlatformIO environment from this directory.

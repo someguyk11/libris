@@ -99,6 +99,7 @@ void status(JsonDocument& doc) {
     doc["leftEdges"] = value.left; doc["rightEdges"] = value.right;
     doc["distanceCalibrated"] = AtlasConfig::distanceCalibrated();
     doc["turnsCalibrated"] = AtlasConfig::turnsCalibrated();
+    doc["encoderOnlyGroundTest"] = AtlasConfig::EncoderOnlyGroundTest;
     doc["stepCm"] = AtlasConfig::LocalDriveStepCm;
     doc["leaseMs"] = AtlasConfig::LocalDriveLeaseMs;
     doc["recording"] = value.recording; doc["replaying"] = value.replaying;
@@ -187,7 +188,7 @@ void update(MotionController& motion, SensorManager& sensors, SafetyController& 
             strlcpy(snapshot.message, ok ? "Saving JSON; motors held stationary" : "Save rejected: finish a valid nonempty path and release controls", sizeof(snapshot.message));
         } else if (request.action == Action::Replay) {
             const bool idle = navigation.state() == Navigation::State::Idle || navigation.state() == Navigation::State::Completed;
-            bool ok = held == Action::Stop && idle && !motion.moving() && !navigation.movementPending() && safety.canMove() && AtlasConfig::ObstacleAvoidanceEnabled;
+            bool ok = held == Action::Stop && idle && !motion.moving() && !navigation.movementPending() && safety.canMove() && (AtlasConfig::ObstacleAvoidanceEnabled || AtlasConfig::EncoderOnlyGroundTest);
             if (ok) {
                 LocalRouteStore::Job job{}; job.kind = LocalRouteStore::Job::Kind::Load;
                 job.id = request.sequence; job.slot = request.slot;
@@ -209,7 +210,7 @@ void update(MotionController& motion, SensorManager& sensors, SafetyController& 
                     AtlasConfig::LocalDriveStepCm > AtlasConfig::DistanceToleranceCm &&
                     AtlasConfig::LocalDriveStepCm <= AtlasConfig::MaximumMoveCm &&
                     AtlasConfig::LocalDriveLeaseMs >= 400 && AtlasConfig::LocalDriveLeaseMs <= 2000 &&
-                    AtlasConfig::ObstacleAvoidanceEnabled && (!recording || routes.count() < AtlasConfig::LocalRouteMaxSegments);
+                    (AtlasConfig::ObstacleAvoidanceEnabled || AtlasConfig::EncoderOnlyGroundTest) && (!recording || routes.count() < AtlasConfig::LocalRouteMaxSegments);
                 const bool ok = configured && (request.action == Action::Front ? navigation.driveDistance(AtlasConfig::LocalDriveStepCm) :
                     request.action == Action::Back ? navigation.driveDistance(-AtlasConfig::LocalDriveStepCm) :
                     navigation.turn90(request.action == Action::Right));

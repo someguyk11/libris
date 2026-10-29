@@ -23,6 +23,12 @@ void ARDUINO_ISR_ATTR SensorManager::echoInterrupt(void* context) {
 
 bool SensorManager::begin() {
     if (ready_) return true;
+    if (EncoderOnlyGroundTest) {
+        // Disabled subsystem, NOT fabricated clear readings. No sensor GPIO/ISR.
+        for (auto& reading : readings_) reading.error = Error::NotConfigured;
+        ready_ = true;
+        return true;
+    }
     if (pinConfigurationError() || tuningError()) {
         for (uint8_t i = 0; i < SensorCount; ++i) {
             readings_[i].error = Error::NotConfigured;
@@ -75,7 +81,7 @@ SensorManager::Reading SensorManager::reading(SensorId sensor, uint32_t nowMs) c
 }
 
 void SensorManager::update(uint32_t nowMs) {
-    if (!ready_) return;
+    if (!ready_ || EncoderOnlyGroundTest) return;
     if (active_ >= 0) {
         EchoCapture& capture = captures_[active_];
         portENTER_CRITICAL(&capture.lock);

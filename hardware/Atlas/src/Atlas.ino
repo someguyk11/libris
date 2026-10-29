@@ -151,6 +151,8 @@ void diagnostics(uint32_t nowMs) {
 
 void setup() {
     if (AtlasConfig::DiagnosticsEnabled || AtlasConfig::HardwareTestMode || AtlasConfig::LocalDriveEnabled) Serial.begin(AtlasConfig::SerialBaud);
+    if (AtlasConfig::EncoderOnlyGroundTest)
+        Serial.println("WARNING: encoder-only ground TEST; NO obstacle detection. Straight routes only. Keep physical power cutoff ready.");
     motion.begin();
     sensors.begin();
     const bool imuReady = imu.begin();
@@ -163,7 +165,9 @@ void setup() {
     const bool networkWorkerReady = localReady && telemetry.begin();
     if (AtlasConfig::DiagnosticsEnabled) {
         // Startup only: there is no motion permission here.
-        Serial.println("Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
+        Serial.println(AtlasConfig::EncoderOnlyGroundTest ?
+            "Encoder-only ground TEST: sensor checks disabled; stall, timeout and stop protections retained." :
+            "Atlas Layers 1+2+3; output disabled until configuration and sensors are safe.");
         if (!networkWorkerReady) Serial.println("Network worker unavailable; backend movement disabled.");
         if (!imuReady) Serial.println("IMU diagnostics unavailable: check explicit bus configuration.");
         if (!pcfReady) Serial.println("PCF expander unavailable: check bus configuration.");

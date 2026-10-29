@@ -26,6 +26,11 @@
 #endif
 
 namespace AtlasConfig {
+// Explicit, separate PlatformIO build only. No obstacle detection/localization.
+#ifndef ATLAS_ENCODER_GROUND_TEST
+#define ATLAS_ENCODER_GROUND_TEST 0
+#endif
+constexpr bool EncoderOnlyGroundTest = ATLAS_ENCODER_GROUND_TEST == 1;
 constexpr int UnconfiguredPin = -1;
 enum class EncoderEdges : uint8_t { Unconfigured, Rising, Falling, Both };
 enum class StopMode : uint8_t { Coast, Brake };
@@ -38,9 +43,11 @@ struct SensorPins { int trigger; int echo; };
 // Each side has TWO separate H-bridges, one per motor. Fan out each GPIO
 // to the corresponding input on both bridges. NEVER tie bridge outputs
 // together. Confirm motor polarity, driver current capacity and nSLEEP wiring.
-constexpr MotorPins LeftMotor = {UnconfiguredPin, UnconfiguredPin, false};
-constexpr MotorPins RightMotor = {UnconfiguredPin, UnconfiguredPin, false};
-constexpr bool MotorInputFanoutConfirmed = false;
+// Left: IN1/IN3 -> GPIO26, IN2/IN4 -> GPIO25.
+// Right: IN1/IN3 -> GPIO27, IN2/IN4 -> GPIO33.
+constexpr MotorPins LeftMotor = {26, 25, false};
+constexpr MotorPins RightMotor = {27, 33, false};
+constexpr bool MotorInputFanoutConfirmed = true; // confirmed by operator
 // Separate nSLEEP controls, switched together. The second pin may be left
 // unconfigured when both drivers share the first pin. Hardware pull-downs on
 // bridge inputs / nSLEEP are required for safe reset and unconfigured firmware.
@@ -48,14 +55,14 @@ constexpr int DriverSleepPin = 19;
 constexpr int SecondDriverSleepPin = 18;
 constexpr int DriverSleepPins[] = {DriverSleepPin, SecondDriverSleepPin};
 constexpr bool DriverSleepExternallyManaged = false;
-constexpr int LeftEncoderPin = UnconfiguredPin;
-constexpr int RightEncoderPin = UnconfiguredPin;
-constexpr EncoderEdges CountEdges = EncoderEdges::Unconfigured;
+constexpr int LeftEncoderPin = 34;
+constexpr int RightEncoderPin = 35;
+constexpr EncoderEdges CountEdges = EncoderEdges::Both;
 constexpr bool EncoderInternalPullup = false;
 constexpr uint32_t EncoderMinEdgeIntervalUs = 0; // 0 disables filtering; measure first.
 // This implementation counts ONE signal per side, unsigned edges, not quadrature.
 // Set true only after confirming this matches the installed encoder interface.
-constexpr bool SingleSignalEncodersConfirmed = false;
+constexpr bool SingleSignalEncodersConfirmed = true; // one photointerrupter per side
 constexpr SensorPins Sensors[SensorCount] = {
     {UnconfiguredPin, UnconfiguredPin}, // front
     {UnconfiguredPin, UnconfiguredPin}, // back
@@ -111,8 +118,9 @@ constexpr StopMode EmergencyStopMode = StopMode::Coast;
 constexpr float WheelDiameterCm = 6.5f;
 // EFFECTIVE edge counts per WHEEL revolution using CountEdges, not the encoder
 // manufacturer's ambiguous PPR / motor-shaft counts. Zero means unconfigured.
-constexpr float LeftCountsPerWheelRevolution = 0.0f;
-constexpr float RightCountsPerWheelRevolution = 0.0f;
+// 20 slots, both edges, disc rotates 1:1 with wheel (operator confirmed).
+constexpr float LeftCountsPerWheelRevolution = 40.0f;
+constexpr float RightCountsPerWheelRevolution = 40.0f;
 constexpr float WheelTrackCm = 0.0f; // measure contact-patch centre to centre.
 constexpr float ClockwiseTurnScale = 0.0f; // measure skid-steer correction; no assumed calibration.
 constexpr float CounterclockwiseTurnScale = 0.0f;
@@ -129,7 +137,7 @@ constexpr float ObstacleHysteresisCm = 5.0f;
 // Master switch for obstacle avoidance. When false the robot does not stop or
 // pause for obstacles; SafetyController never faults AtlasFault::Obstacle and
 // ObstacleAvoidance is a no-op. Set to true to re-enable.
-constexpr bool ObstacleAvoidanceEnabled = true;
+constexpr bool ObstacleAvoidanceEnabled = !EncoderOnlyGroundTest;
 constexpr uint32_t EchoTimeoutUs = 25000;
 constexpr uint32_t TriggerPulseUs = 10; // only bounded microsecond delay in the control path.
 constexpr uint32_t SensorSlotIntervalMs = 60; // one sensor per slot, not four simultaneous pings.
@@ -261,17 +269,20 @@ inline const char* pinConfigurationError() {
         Sensors[1].trigger, Sensors[1].echo, Sensors[2].trigger, Sensors[2].echo,
         Sensors[3].trigger, Sensors[3].echo, DriverSleepPin, SecondDriverSleepPin};
     for (uint8_t i = 0; i < 16; ++i) {
+        if (EncoderOnlyGroundTest && i >= 6 && i < 14) continue;
         if (i >= 14 && pins[i] == UnconfiguredPin) continue;
         const bool output = i < 4 || i >= 14 || (i >= 6 && i % 2 == 0);
         if (!(output ? outputPinAllowed(pins[i]) : inputPinAllowed(pins[i])))
             return "GPIO missing or excluded by DevKit pin policy";
-        for (uint8_t j = 0; j < i; ++j)
+        for (uint8_t j = 0; j < i; ++j) {
+            if (EncoderOnlyGroundTest && j >= 6 && j < 14) continue;
             if (pins[i] == pins[j]) return "GPIO assignments overlap";
+        }
     }
     if (EncoderInternalPullup && (LeftEncoderPin >= 34 || RightEncoderPin >= 34))
         return "GPIO34-39 require external encoder pull-ups";
     if (!MotorInputFanoutConfirmed) return "Confirm separate H-bridge input fanout and motor wiring";
-    if (!SensorElectricalInterfaceConfirmed) return "Confirm ultrasonic 3.3 V electrical interface";
+    if (!EncoderOnlyGroundTest && !SensorElectricalInterfaceConfirmed) return "Confirm ultrasonic 3.3 V electrical interface";
     if (DriverSleepPin != UnconfiguredPin && !outputPinAllowed(DriverSleepPin))
         return "nSLEEP requires an output-capable GPIO";
     if (DriverSleepPin == UnconfiguredPin && SecondDriverSleepPin == UnconfiguredPin &&
@@ -354,7 +365,7 @@ inline const char* navigationTuningError() {
     return nullptr;
 }
 inline bool turnsCalibrated() {
-    return distanceCalibrated() && positive(WheelTrackCm) &&
+    return !EncoderOnlyGroundTest && distanceCalibrated() && positive(WheelTrackCm) &&
         positive(ClockwiseTurnScale) && positive(CounterclockwiseTurnScale);
 }
 } // namespace AtlasConfig

@@ -34,6 +34,15 @@ CheckpointManager::Result CheckpointManager::update(
     }
     bool consistent = p.state == MotionController::State::Complete;
     observed_ = Evidence{};
+    if (EncoderOnlyGroundTest) {
+        // Keep independent wheel-distance/mismatch checks above and a stopped
+        // settling interval, but never claim ultrasonic evidence was observed.
+        if (consistent && nowMs - attemptAtMs_ >= CheckpointSettleMs) {
+            result_ = Result::Valid;
+            if (validatedCount_ < UINT8_MAX) ++validatedCount_;
+        }
+        return result_;
+    }
     for (uint8_t i = 0; i < SensorCount; ++i) {
         const auto r = sensors.reading(static_cast<SensorId>(i), nowMs);
         // Require a full fresh scan after this attempt's endpoint settling time.

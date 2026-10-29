@@ -5,6 +5,7 @@ using namespace AtlasConfig;
 bool Routes::validSegment(const Segment& s) {
     const bool straight = s.kind == MotionController::Kind::Forward || s.kind == MotionController::Kind::Backward;
     const bool turn = s.kind == MotionController::Kind::Clockwise90 || s.kind == MotionController::Kind::Counterclockwise90;
+    if (EncoderOnlyGroundTest && !straight) return false;
     if (straight ? (!positive(s.distanceCm) || s.distanceCm <= DistanceToleranceCm || s.distanceCm > MaximumMoveCm)
                  : (!turn || s.distanceCm != 0)) return false;
     if (s.endpoint.validMask & ~((1U << SensorCount) - 1)) return false;

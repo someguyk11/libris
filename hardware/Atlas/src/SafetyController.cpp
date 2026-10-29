@@ -14,6 +14,7 @@ void SafetyController::begin(uint32_t nowMs) {
 }
 
 AtlasFault SafetyController::inspectSensors(uint32_t nowMs, bool requireAll) {
+    if (EncoderOnlyGroundTest) return AtlasFault::None; // explicit test build only
     bool invalid = false;
     bool obstructed = false;
     const bool moving = motion_.moving();

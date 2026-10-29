@@ -34,7 +34,7 @@ uint32_t calibration() {
 void key(uint8_t slot, char* out, size_t size) { snprintf(out, size, "route%u", slot); }
 
 bool decode(JsonDocument& doc, Route& route) {
-    return LocalRouteJson::decode(doc, route, calibration(), Routes::validSegment);
+    return LocalRouteJson::decode(doc, route, calibration(), Routes::validSegment, AtlasConfig::EncoderOnlyGroundTest);
 }
 bool read(uint8_t slot, JsonDocument& doc) {
     if (!available || slot >= AtlasConfig::LocalRouteSlots) return false;
@@ -64,7 +64,8 @@ bool begin() {
     static_assert(AtlasConfig::LocalRouteSlots > 0 && AtlasConfig::LocalRouteSlots <= 9, "Local route URLs use one-digit slots");
     static_assert(AtlasConfig::LocalRouteMaxSegments > 0, "Local routes need at least one segment");
     jobs = xQueueCreate(1, sizeof(Job)); results = xQueueCreate(1, sizeof(Job));
-    available = prefs.begin("atlasroutes", false);
+    // Never overwrite normal ultrasonic-validated routes with test recordings.
+    available = prefs.begin(AtlasConfig::EncoderOnlyGroundTest ? "atlasedgetest" : "atlasroutes", false);
     if (available) for (uint8_t i = 0; i < AtlasConfig::LocalRouteSlots; ++i) refresh(i);
     return available && jobs && results;
 }
@@ -81,7 +82,7 @@ void workerUpdate() {
             const uint32_t order = nextOrder();
             if (order && job.route.count && job.route.count <= AtlasConfig::LocalRouteMaxSegments) {
                 Route checked;
-                if (LocalRouteJson::encode(job.route, doc, calibration(), order) &&
+                if (LocalRouteJson::encode(job.route, doc, calibration(), order, AtlasConfig::EncoderOnlyGroundTest) &&
                     decode(doc, checked) && measureJson(doc) + 1 <= AtlasConfig::LocalRouteJsonBytes) {
                     static char json[AtlasConfig::LocalRouteJsonBytes];
                     const size_t size = serializeJson(doc, json, sizeof(json));

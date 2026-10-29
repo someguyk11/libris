@@ -67,4 +67,34 @@ int main() {
         assert(LocalRouteJson::decode(doc, output, UINT32_MAX, validSegment));
     }
     std::printf("32-segment JSON: initial %zu B, largest of 1000 varied routes %zu B (3000 B cap); round-trip/legacy/invalid-data tests passed\n", bytes, maximumBytes);
+    // Ground-test routes contain NO manufactured ultrasonic evidence and must
+    // not cross-load into normal firmware (or load old routes without checks).
+    auto validEncoder = [](const Segment& s) {
+        const auto kind = static_cast<unsigned>(s.kind);
+        return kind >= 1 && kind <= 2 && s.endpoint.validMask == 0 &&
+            std::isfinite(s.distanceCm) && s.distanceCm > 0.5f && s.distanceCm <= 200;
+    };
+    for (auto& s : input.segments) {
+        s.kind = Kind::Backward; s.distanceCm = 19.90984f; s.endpoint = Endpoint{};
+    }
+    assert(LocalRouteJson::encode(input, doc, 42, 1, true));
+    assert(doc["version"] == 3 && doc["segments"][0].size() == 2);
+    const size_t groundBytes = measureJson(doc) + 1;
+    assert(groundBytes <= 3000);
+    json.clear(); serializeJson(doc, json); assert(!deserializeJson(loaded, json));
+    assert(LocalRouteJson::decode(loaded, output, 42, validEncoder, true));
+    assert(output.count == 32 && output.segments[0].endpoint.validMask == 0);
+    assert(!LocalRouteJson::decode(loaded, output, 42, validSegment));
+    assert(!LocalRouteJson::decode(loaded, output, 43, validEncoder, true));
+    loaded["segments"][0][0] = 3; // turns prohibited in ground mode
+    assert(!LocalRouteJson::decode(loaded, output, 42, validEncoder, true));
+    assert(!deserializeJson(loaded, json)); loaded["segments"].as<JsonArray>().add<JsonArray>();
+    assert(!LocalRouteJson::decode(loaded, output, 42, validEncoder, true));
+    assert(!deserializeJson(loaded, legacy));
+    assert(!LocalRouteJson::decode(loaded, output, 42, validEncoder, true));
+    input.segments[0].kind = Kind::Clockwise90;
+    assert(!LocalRouteJson::encode(input, doc, 42, 1, true));
+    input.segments[0].kind = Kind::Forward; input.segments[0].endpoint.validMask = 15;
+    assert(!LocalRouteJson::encode(input, doc, 42, 1, true));
+    std::printf("32-segment encoder-only JSON: %zu B; round-trip/schema isolation/turn/capacity rejection passed\n", groundBytes);
 }

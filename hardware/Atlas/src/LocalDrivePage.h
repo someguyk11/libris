@@ -1,146 +1,272 @@
 #pragma once
 
 // Self-contained: no internet, CDN, backend or browser storage required.
+// Single HTML app served by the ESP32 at /drive. Dark theme, single-column,
+// pill-button layout sized to fit inside the ESP32 PROGMEM + gzip budget.
 static const char LocalDrivePage[] PROGMEM = R"HTML(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Atlas local drive</title><style>
-body{background:#101827;color:#edf2ff;font:16px system-ui;max-width:640px;margin:24px auto;padding:16px}
-button{font:inherit;padding:20px;border:0;border-radius:12px;background:#2976c9;color:white;touch-action:none;user-select:none}
-button:disabled{opacity:.4}.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}#front{grid-column:2}#left{grid-row:2}#stop{grid-row:2;background:#b62d39}#right{grid-row:2}#back{grid-column:2}
-pre{white-space:pre-wrap;background:#1a293d;padding:14px;border-radius:12px}.actions{display:flex;gap:12px;margin-top:16px}.actions button{flex:1}#emergency{background:#b62d39}
-input,select{box-sizing:border-box;font:inherit;padding:12px;margin:8px 0;width:100%;background:#1a293d;color:white;border:1px solid #617288;border-radius:8px}input[type=checkbox]{width:auto}label{display:block}.tabs{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}.tabs button{flex:1;min-width:0;padding:14px 10px}[hidden]{display:none!important}a{color:#8bc9ff}
-</style><h1>Atlas · Local drive</h1>
-<p>Keep Atlas in sight. Local routes use photointerrupters and ultrasonic checkpoints, not timing or backend commands.</p>
-<nav class="tabs" aria-label="Atlas options"><button id="wifi-tab">Wi-Fi connection</button><button id="drive-tab" aria-pressed="true">Movement</button><button id="replay-tab" aria-pressed="false">Replay</button></nav>
-<p id="mode-notice" hidden>Wi-Fi setup is selected. Driving is disabled. <button id="drive-enable">Enable drive &amp; replay</button></p>
-<p id="connection">Connecting to ESP32…</p><section id="movement-panel">
-<p>Hold a direction; release to stop. One encoder-measured step per press; left/right turn 90°. For recording, hold until the step is validated, then release. Interrupting a move invalidates the entire unsaved path.</p>
-<div class="pad">
-<button id="front" data-command="front" disabled>▲ Front</button><button id="left" data-command="left" disabled>◀ Left 90°</button>
-<button id="stop">STOP</button><button id="right" data-command="right" disabled>Right 90° ▶</button><button id="back" data-command="back" disabled>▼ Back</button></div>
-<h2>Save a path</h2><p id="record-status">Not recording</p>
-<button id="record" disabled>Start new recording</button><button id="discard">Discard unsaved path</button>
-<label>Route name<input id="route-name" maxlength="40" placeholder="Entrance to shelf"></label>
-<label>Save slot<select id="save-slot"></select></label><p>Automatic fills an empty slot first, then replaces the oldest saved route when all three are full.</p><button id="save-route" disabled>Save path on ESP32</button>
-</section><section id="replay-panel" hidden>
-<h2>Replay a saved route</h2><label>Selected route<select id="replay-slot"></select></label>
-<p><a id="route-json" target="_blank" rel="noopener">View selected route JSON</a></p>
-<label><input id="start-confirmed" type="checkbox"> Atlas is at this route's original start position and heading; the area is clear.</label>
-<p>Keep this page open and in the foreground. Wi-Fi/status loss cancels replay. No automatic resume after an interruption.</p>
-<button id="replay-route" disabled>Replay selected route</button><button id="replay-stop">STOP replay</button><p id="replay-progress">No replay running</p>
-</section><div class="actions"><button id="emergency">Latch E-stop</button><button id="reset">Reset safety</button></div>
-<pre id="status">Waiting for local sensor/encoder status…</pre><p>Wi-Fi loss stops and latches safety. Reset never resumes motion. Use a physical power cut if necessary.</p>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: #0a0b12; color: #e8eaf2;
+  font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Consolas, monospace;
+  max-width: 640px; margin: 24px auto; padding: 16px;
+}
+h1 { font-size: 40px; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 8px; color: #f2f3f7; }
+.subtitle { font-size: 14px; color: #9aa3b8; margin-bottom: 20px; line-height: 1.5; }
+.tabs { display: flex; gap: 10px; margin-bottom: 16px; }
+.tab {
+  flex: 1; padding: 14px; border: 1px solid #2d3148; border-radius: 10px;
+  background: #131523; color: #a8b2d1; font-size: 15px; font-weight: 500;
+  cursor: pointer; text-align: center;
+}
+.tab.active { background: #7c5cff; color: #ffffff; border-color: #7c5cff; }
+.tab:disabled { opacity: 0.4; cursor: not-allowed; }
+.status-bar { margin-bottom: 16px; padding: 8px 12px; border-radius: 8px;
+  background: #131523; border: 1px solid #2d3148; font-size: 14px; color: #ff6b6b; }
+.card {
+  background: #131523; border: 1px solid #2d3148; border-radius: 12px;
+  padding: 20px; margin-bottom: 20px;
+}
+.card h2 { font-size: 20px; margin-bottom: 16px; color: #f2f3f7; letter-spacing: 0.5px; }
+.card p { font-size: 14px; color: #9aa3b8; margin-bottom: 14px; line-height: 1.5; }
+.btn-group { display: grid; gap: 10px; }
+button {
+  padding: 14px; border: 1px solid #2d3148; border-radius: 10px;
+  background: #1c1f30; color: #e8eaf2; font-size: 15px; font-weight: 500;
+  cursor: pointer; text-align: center; min-height: 52px;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; border-color: #2d3148; }
+button.primary { background: #7c5cff; border-color: #7c5cff; color: #fff; }
+button.danger { background: rgba(139, 45, 45, 0.15); border-color: #8b2d2d; color: #ff6b6b; }
+button.outline { background: transparent; border-color: #4a90ff; color: #4a90ff; }
+button.secondary { border-color: #2d3148; color: #a8b2d1; }
+button:active { transform: translateY(1px); }
+.direction-pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 12px 0; }
+.pad-front { grid-column: 2; }
+.pad-left { grid-row: 2; grid-column: 1; }
+.pad-stop { grid-row: 2; grid-column: 2; }
+.pad-right { grid-row: 2; grid-column: 3; }
+.pad-back { grid-column: 2; }
+label { display: block; font-size: 13px; color: #9aa3b8; margin-bottom: 6px; }
+input, select {
+  width: 100%; padding: 12px; border: 1px solid #2d3148; border-radius: 8px;
+  background: #0f111a; color: #e8eaf2; font-size: 15px; margin-bottom: 12px;
+}
+input:disabled, select:disabled { opacity: 0.4; background: #131523; }
+.small { font-size: 13px; color: #7e86a0; margin-top: 4px; }
+.checkbox-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.checkbox-row input[type=checkbox] { width: auto; margin: 2px 0 0 0; accent-color: #7c5cff; }
+.checkbox-row label { margin: 0; font-size: 14px; color: #e8eaf2; cursor: pointer; }
+.json-link { font-size: 13px; color: #7c5cff; text-decoration: underline; cursor: pointer; display: block; margin-bottom: 14px; }
+.json-link:hover { color: #a78bfa; }
+.hidden { display: none !important; }
+.footer { margin-top: 20px; padding-top: 16px; border-top: 1px solid #2d3148; }
+.footer-actions { display: flex; gap: 12px; margin-bottom: 12px; }
+.footer-actions button { flex: 1; min-height: 56px; }
+.status-line { background: #0f111a; border: 1px solid #2d3148; border-radius: 8px;
+  padding: 12px; font-size: 14px; color: #9aa3b8; }
+.footer-note { margin-top: 12px; font-size: 13px; color: #7e86a0; line-height: 1.5; }
+</style>
+
+<h1>Atlas - Local drive</h1>
+<p class="subtitle">Keep Atlas in sight. Local routes use photointerrupters and ultrasonic checkpoints, not timing or backend commands.</p>
+
+<div class="tabs">
+  <button class="tab" id="tab-wifi" onclick="switchTab('wifi')">Wi-Fi connection</button>
+  <button class="tab active" id="tab-movement" onclick="switchTab('movement')">Movement</button>
+  <button class="tab" id="tab-replay" onclick="switchTab('replay')">Replay</button>
+</div>
+
+<div id="status-bar" class="status-bar">ESP32 status lost — movement unverified</div>
+
+<!-- Movement tab -->
+<div id="panel-movement" class="card">
+  <p>Hold a direction; release to stop. One encoder-measured step per press; left/right turn 90&deg;. For recording, hold until the step is validated, then release. Interrupting a move invalidates the entire unsaved path.</p>
+  <div class="direction-pad btn-group">
+    <button id="btn-front" class="pad-front" onclick="sendCmd('front')">Front</button>
+    <button id="btn-left" class="pad-left" onclick="sendCmd('left')">Left 90&deg;</button>
+    <button id="btn-stop" class="pad-stop danger" onclick="sendCmd('stop')">STOP</button>
+    <button id="btn-right" class="pad-right" onclick="sendCmd('right')">Right 90&deg;</button>
+    <button id="btn-back" class="pad-back" onclick="sendCmd('back')">Back</button>
+  </div>
+  <h2>Save a path</h2>
+  <div id="recording-state">Not recording</div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;">
+    <button class="primary" id="btn-record" onclick="sendCmd('record')">Start new recording</button>
+    <button class="secondary" id="btn-discard" onclick="sendCmd('discard')">Discard unsaved path</button>
+  </div>
+  <label>Route name</label>
+  <input id="route-name" type="text" placeholder="Entrance to shelf" maxlength="40">
+  <label>Save slot</label>
+  <select id="save-slot"><option value="">Select slot</option></select>
+  <p class="small">Automatic fills an empty slot first, then replaces the oldest saved route when all three are full.</p>
+  <button class="secondary" id="btn-save-path" onclick="savePath()" disabled>Save path on ESP32</button>
+</div>
+
+<!-- Replay tab -->
+<div id="panel-replay" class="card hidden">
+  <h2>Replay a saved route</h2>
+  <label>Selected route</label>
+  <select id="replay-slot"><option value="">Select a route</option></select>
+  <a id="route-json-link" class="json-link" href="#" target="_blank" rel="noopener">View selected route JSON</a>
+  <div class="checkbox-row">
+    <input type="checkbox" id="start-confirmed">
+    <label for="start-confirmed">Atlas is at this route&rsquo;s original start position and heading; the area is clear.</label>
+  </div>
+  <p class="small">Keep this page open and in the foreground. Wi-Fi/status loss cancels replay. No automatic resume after an interruption.</p>
+  <div style="display:flex;gap:10px;margin-top:10px;">
+    <button class="secondary" id="btn-replay" onclick="sendReplay()" disabled>Replay selected route</button>
+    <button class="danger" id="btn-stop-replay" onclick="sendCmd('stop')">STOP replay</button>
+  </div>
+  <div id="replay-status">No replay running</div>
+</div>
+
+<div class="footer">
+  <div class="footer-actions">
+    <button class="danger" onclick="sendCmd('emergency')">Latch E-stop</button>
+    <button class="outline" onclick="sendCmd('reset')">Reset safety</button>
+  </div>
+  <div id="status-line" class="status-line">Waiting for local sensor/encoder status...</div>
+  <p class="footer-note">Wi-Fi loss stops and latches safety. Reset never resumes motion. Use a physical power cut if necessary.</p>
+</div>
+
 <script>
-let token='',sequence=0,held='',busy=false,ready=false,lastStatus=0,lastState=null,routeList='',replaySequence=0,modeChanging=false;
-const connection=document.querySelector('#connection'),status=document.querySelector('#status');
-const directions=[...document.querySelectorAll('[data-command]')];
-function disable(){ready=false;directions.forEach(b=>b.disabled=true)}
-async function send(command,extra={}){
- if(!token) return;
- const seq=++sequence;
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),500);
- try{
-  const r=await fetch('/drive/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,sequence:seq,command,...extra}),signal:controller.signal,cache:'no-store'});
-  if(!r.ok) throw Error('Command rejected ('+r.status+')');
- }catch(e){held='';disable();connection.textContent=e.message+' — movement unverified; heartbeat will stop Atlas.'}
- finally{clearTimeout(timer)}
-}
-function stop(command='stop'){held='';void send(command)}
-async function poll(){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),500);
- try{
-  const r=await fetch('/drive/status',{cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('Status unavailable');
-  const s=await r.json();
-  if(token&&token!==s.token){held='';disable();location.reload();return}
-  token=s.token;sequence=Math.max(sequence,s.sequence);lastStatus=performance.now();
-  lastState=s;ready=s.fresh&&s.ready&&!s.latched&&!modeChanging&&s.localMode!=='wifi'&&!s.modeChanging;directions.forEach(b=>b.disabled=!ready||s.storageBusy||s.replaying||((b.dataset.command==='left'||b.dataset.command==='right')&&!s.turnsCalibrated));
-  document.querySelector('#mode-notice').hidden=s.localMode!=='wifi';
-  connection.textContent=modeChanging||s.modeChanging?'Switching mode · motors inhibited':s.localMode==='wifi'?'Wi-Fi connection mode · driving disabled':ready?'Local control ready · '+s.stepCm+' cm per straight press':'Movement inhibited · '+(s.configurationError||s.fault);
-  const names=['Front','Back','Left','Right'];
-  status.textContent='Safety: '+s.fault+' | latch: '+s.latched+'\nNavigation: '+s.navigation+' | moving: '+s.moving+'\n'+s.message+'\nPhotointerrupter edges: L '+s.leftEdges+' / R '+s.rightEdges+'\n'+s.sensors.map((v,i)=>names[i]+': '+(v.valid?v.cm.toFixed(1)+' cm':'INVALID / STALE')).join('\n')+'\nDistance calibrated: '+s.distanceCalibrated+' | turns: '+s.turnsCalibrated;
-  if(held&&!ready)stop();
-  if(held==='replay'&&s.appliedSequence>=replaySequence&&!s.replaying&&!s.storageBusy){held='';document.querySelector('#start-confirmed').checked=false}
-  renderRoutes(s);
- }catch(e){disable();if(held)stop();connection.textContent='ESP32 status lost — movement unverified'}
- finally{clearTimeout(timer);setTimeout(poll,300)}
-}
-directions.forEach(b=>{
- b.addEventListener('pointerdown',e=>{if(e.button!==0||!ready||held||busy)return;e.preventDefault();b.setPointerCapture(e.pointerId);held=b.dataset.command;busy=true;send(held).finally(()=>busy=false)});
- for(const name of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(name,()=>{if(held)stop()});
- b.addEventListener('contextmenu',e=>e.preventDefault());
-});
-setInterval(()=>{if(performance.now()-lastStatus>700){if(held)stop();disable();renderRoutes(lastState)}if(held&&!busy){busy=true;send(held==='replay'?'heartbeat':held).finally(()=>busy=false)}},200);
-document.querySelector('#stop').onclick=()=>stop();document.querySelector('#emergency').onclick=()=>stop('emergency');document.querySelector('#reset').onclick=()=>stop('reset');
-function renderRoutes(s){
- if(!s)return;
- const routes=s.routes||[],serialized=JSON.stringify(routes);
- if(serialized!==routeList){
-  routeList=serialized;
-  document.querySelector('#start-confirmed').checked=false;
-  for(const [id,onlyValid]of [['save-slot',false],['replay-slot',true]]){
-   const select=document.querySelector('#'+id),selected=select.value;select.replaceChildren();
-   if(!onlyValid){const option=document.createElement('option');option.value='-1';option.textContent='Automatic · empty slot, otherwise replace oldest';select.append(option)}
-   for(const route of routes){if(onlyValid&&!route.valid)continue;const option=document.createElement('option');option.value=String(route.slot);option.textContent='Slot '+(route.slot+1)+' · '+(route.valid?route.name+' ('+route.segments+' steps)':'Empty / invalid');select.append(option)}
-   if([...select.options].some(o=>o.value===selected))select.value=selected;
+  let token = '', sequence = 0, held = '', busy = false, replaySequence = 0, pollTimer = null;
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.querySelectorAll('[id^=panel-]').forEach(p => p.classList.add('hidden'));
+    document.getElementById('panel-' + tab).classList.remove('hidden');
+    if (tab === 'replay') loadRoutes();
   }
- }
- const occupied=Boolean(held||s.storageBusy||s.replaying||s.stepPending);
- document.querySelector('#record').disabled=!ready||occupied||s.recording||!s.storageReady;
- document.querySelector('#save-route').disabled=!ready||occupied||!s.storageReady||!s.routeCount||!(document.querySelector('#route-name').value||'').trim();
- document.querySelector('#replay-route').disabled=!ready||occupied||s.recording||!s.storageReady||!document.querySelector('#replay-slot').value||!document.querySelector('#start-confirmed').checked;
- document.querySelector('#replay-slot').disabled=occupied;
- document.querySelector('#record-status').textContent=(s.recording?'Recording':'RAM path')+' · '+(s.routeCount||0)+' / '+(s.maxRouteSegments||32)+' validated steps'+(s.stepPending?' · wait for validation before release':'');
- document.querySelector('#replay-progress').textContent=s.replaying?'Replay: '+(s.routeIndex||0)+' / '+(s.routeCount||0)+' completed steps':s.storageBusy?'Loading/saving locally…':'No replay running';
- const slot=document.querySelector('#replay-slot').value;
- const link=document.querySelector('#route-json');link.hidden=!slot;link.href=slot?'/drive/route/'+slot:'';
-}
-function tab(replay){
- if(held)stop();document.querySelector('#movement-panel').hidden=replay;document.querySelector('#replay-panel').hidden=!replay;
- document.querySelector('#drive-tab').setAttribute('aria-pressed',String(!replay));document.querySelector('#replay-tab').setAttribute('aria-pressed',String(replay));
-}
-async function modeRequest(path,data){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),1500);
- try{const r=await fetch(path,{method:data?'POST':'GET',cache:'no-store',signal:controller.signal,...(data?{headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{})});const value=await r.json();if(!r.ok)throw Error(value.error||'Mode request failed');return value}finally{clearTimeout(timer)}
-}
-async function changeMode(mode,target=''){
- if(modeChanging)return;
- if(mode==='wifi'&&(held||lastState?.recording)&&!confirm('Switch to Wi-Fi connection? Motion will stop and the unsaved recording will be discarded. Saved routes are kept.'))return;
- modeChanging=true;held='';disable();renderRoutes(lastState);
- try{
-  await send('stop');
-  const operation=await modeRequest('/local/mode',{mode}),deadline=performance.now()+15000;
-  while(performance.now()<deadline){
-   const s=await modeRequest('/status');
-   if(s.operation!==operation.operation)throw Error('Network settings changed elsewhere. Check the current mode.');
-   if(s.operationStatus==='failed')throw Error('Mode switch failed. Movement remains unverified.');
-   if(s.operationStatus==='complete'&&s.localMode===mode){if(target)location.href=target;return}
-   await new Promise(resolve=>setTimeout(resolve,150));
+
+  function statusBar(msg, color) {
+    const el = document.getElementById('status-bar');
+    el.textContent = msg;
+    el.style.color = color || '#ff6b6b';
   }
-  throw Error('Mode switch not confirmed. Wait for scanning/connecting to finish and check status.');
- }catch(error){connection.textContent=error.message+' Rejoin the Atlas AP if needed.'}
- finally{modeChanging=false}
-}
-document.querySelector('#wifi-tab').onclick=()=>changeMode('wifi','/');
-document.querySelector('#drive-enable').onclick=()=>changeMode('drive');
-document.querySelector('#drive-tab').onclick=()=>{tab(false);if(lastState?.localMode==='wifi')void changeMode('drive')};
-document.querySelector('#replay-tab').onclick=()=>{tab(true);if(lastState?.localMode==='wifi')void changeMode('drive')};
-document.querySelector('#record').onclick=()=>{if(ready&&!held&&!lastState?.storageBusy)void send('record')};
-document.querySelector('#discard').onclick=()=>{if(confirm('Discard the unsaved RAM path? Saved routes are kept.'))stop('discard')};
-document.querySelector('#save-route').onclick=()=>{
- if(!ready||held||lastState?.storageBusy)return;
- const name=document.querySelector('#route-name').value.trim(),value=document.querySelector('#save-slot').value;if(!name||value==='')return;
- const slot=Number(value),existing=lastState?.routes?.find(r=>r.slot===slot);
- if(existing?.valid&&!confirm('Replace saved route "'+existing.name+'" in this slot?'))return;
- void send('save',{slot,name});
-};
-document.querySelector('#replay-route').onclick=()=>{
- if(!ready||held||lastState?.storageBusy||lastState?.recording||!document.querySelector('#start-confirmed').checked)return;
- const value=document.querySelector('#replay-slot').value;if(value==='')return;
- held='replay';replaySequence=sequence+1;busy=true;send('replay',{slot:Number(value),startConfirmed:true}).finally(()=>busy=false);
-};
-document.querySelector('#replay-stop').onclick=()=>stop();
-for(const id of ['route-name','start-confirmed','replay-slot'])document.querySelector('#'+id).addEventListener('input',()=>renderRoutes(lastState));
-document.querySelector('#replay-slot').addEventListener('change',()=>{document.querySelector('#start-confirmed').checked=false;renderRoutes(lastState)});
-addEventListener('blur',()=>{if(held)stop()});addEventListener('pagehide',()=>{if(held)stop()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&held)stop()});addEventListener('keydown',e=>{if(e.key==='Escape')stop()});
-poll();
-</script></html>)HTML";
+  function statusLine(msg) {
+    document.getElementById('status-line').textContent = msg;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/drive/status', { cache: 'no-store' });
+      if (!r.ok) throw Error('Status failed');
+      const s = await r.json();
+      if (token && token !== s.token) { location.reload(); return; }
+      token = s.token;
+      sequence = Math.max(sequence, s.sequence);
+      const ready = s.fresh && s.ready && !s.latched && s.localMode !== 'wifi' && !s.modeChanging;
+      statusBar(s.configurationError || s.fault || (s.moving ? 'Movement active' : 'Local control ready'),
+        s.fault && s.fault !== 'None' ? '#ff6b6b' : '#4ade80');
+      statusLine(s.message || 'Waiting for local sensor/encoder status...');
+
+      const recordBtn = document.getElementById('btn-record');
+      const discardBtn = document.getElementById('btn-discard');
+      const saveBtn = document.getElementById('btn-save-path');
+      const recordState = document.getElementById('recording-state');
+      recordBtn.disabled = !ready || s.storageBusy || s.recording;
+      discardBtn.disabled = !ready || s.storageBusy || s.recording;
+      saveBtn.disabled = !ready || s.storageBusy || !s.storageReady || !s.routeCount ||
+        !document.getElementById('route-name').value.trim();
+      recordState.textContent = s.recording ? 'Recording' : 'Not recording';
+      recordState.textContent += ' · ' + (s.routeCount || 0) + ' / ' + (s.maxRouteSegments || 32) + ' validated steps';
+
+      const replayBtn = document.getElementById('btn-replay');
+      const stopReplayBtn = document.getElementById('btn-stop-replay');
+      const replayStatus = document.getElementById('replay-status');
+      const slotVal = document.getElementById('replay-slot').value;
+      const replayReady = ready && !s.storageBusy && !s.recording && slotVal !== '';
+      replayBtn.disabled = !replayReady || !document.getElementById('start-confirmed').checked;
+      stopReplayBtn.disabled = !s.replaying;
+      replayStatus.textContent = s.replaying
+        ? ('Replaying: ' + (s.routeIndex || 0) + ' / ' + (s.routeCount || 0) + ' completed steps')
+        : (s.storageBusy ? 'Loading/saving locally…' : 'No replay running');
+
+      if (held === 'replay' && s.appliedSequence >= replaySequence && !s.replaying && !s.storageBusy) {
+        held = ''; document.getElementById('start-confirmed').checked = false;
+      }
+      document.querySelectorAll('button').forEach(b => {
+        if (b.id === 'btn-stop' || b.id === 'btn-stop-replay') return;
+        if (b.dataset.command && (b.id === 'btn-front' || b.id === 'btn-back' || b.id === 'btn-left' || b.id === 'btn-right')) {
+          b.disabled = !ready || s.storageBusy || s.replaying;
+        }
+      });
+      if (held && !ready) stop();
+    } catch (e) {
+      statusBar('ESP32 status lost — movement unverified');
+    }
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(poll, 300);
+  }
+
+  function send(cmd, extra = {}) {
+    if (!token) return;
+    const seq = ++sequence;
+    const body = Object.assign({ token, sequence: seq, command: cmd }, extra);
+    fetch('/drive/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), cache: 'no-store'
+    }).then(r => {
+      if (!r.ok) throw Error('Command rejected (' + r.status + ')');
+    }).catch(e => {
+      held = ''; busy = false;
+      statusBar(e.message + ' — movement unverified');
+    });
+  }
+  function stop(cmd = 'stop') { held = ''; busy = false; send(cmd); }
+  function sendCmd(cmd) {
+    held = cmd; busy = true; send(cmd).finally(() => { busy = false; });
+  }
+  function sendReplay() {
+    const slot = document.getElementById('replay-slot').value;
+    if (slot === '') return;
+    held = 'replay'; replaySequence = sequence + 1; busy = true;
+    send('replay', { slot: Number(slot), startConfirmed: true }).finally(() => { busy = false; });
+  }
+  function savePath() {
+    const name = document.getElementById('route-name').value.trim();
+    const slot = document.getElementById('save-slot').value;
+    if (!name || slot === '') return;
+    send('save', { slot: Number(slot), name });
+  }
+
+  async function loadRoutes() {
+    try {
+      const r = await fetch('/drive/status', { cache: 'no-store' });
+      const s = await r.json();
+      const select = document.getElementById('replay-slot');
+      select.innerHTML = '<option value="">Select a route</option>';
+      (s.routes || []).forEach(route => {
+        const o = document.createElement('option');
+        o.value = route.slot;
+        o.textContent = 'Slot ' + (route.slot + 1) + ' · ' +
+          (route.valid ? route.name + ' (' + route.segments + ' steps)' : 'Empty / invalid');
+        select.appendChild(o);
+      });
+      const link = document.getElementById('route-json-link');
+      link.hidden = true;
+      select.onchange = function () {
+        link.hidden = !this.value;
+        link.href = this.value ? '/drive/route/' + this.value : '#';
+        document.getElementById('start-confirmed').checked = false;
+      };
+    } catch (e) {}
+  }
+
+  document.getElementById('route-name').addEventListener('input', () => {
+    document.getElementById('btn-save-path').disabled = !document.getElementById('route-name').value.trim();
+  });
+  document.getElementById('start-confirmed').addEventListener('input', () => {
+    document.getElementById('btn-replay').disabled = !document.getElementById('start-confirmed').checked;
+  });
+
+  document.addEventListener('DOMContentLoaded', poll);
+  window.addEventListener('blur', () => { if (held) stop(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && held) stop(); });
+</script>
+)HTML";
